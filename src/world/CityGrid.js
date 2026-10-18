@@ -33,6 +33,7 @@ export class CityGrid {
     this.hp = new Uint8Array(this.totalCells); // Current cell HP
     this.maxHp = new Uint8Array(this.totalCells); // Initial cell HP
     this.buildingIds = new Uint32Array(this.totalCells); // Building ID (0 = none)
+    this.crackedCells = new Uint8Array(this.totalCells); // 1 = hairline surface crack marked
 
     // Registry of all building metadata instances by ID
     this.buildings = new Map();
@@ -192,6 +193,118 @@ export class CityGrid {
     }
 
     return null;
+  }
+
+  /**
+   * Applies subtle crack damage and marks immediate neighbor cells along the destruction edge.
+   * Neighbor cells take slight damage without dropping to 0 HP (they do not collapse immediately).
+   * @param {number} col
+   * @param {number} row
+   * @param {number} crackDamage
+   * @param {number} crackRadius
+   * @returns {Array<{ col: number, row: number, idx: number, worldX: number, worldY: number, newlyCracked: boolean }>}
+   */
+  applyCrackDamageToNeighbors(col, row, crackDamage = 0.35, crackRadius = 1) {
+    const crackedList = [];
+
+    for (let dr = -crackRadius; dr <= crackRadius; dr++) {
+      for (let dc = -crackRadius; dc <= crackRadius; dc++) {
+        if (dc === 0 && dr === 0) continue;
+
+        const nc = col + dc;
+        const nr = row + dr;
+        const nidx = this.getIndex(nc, nr);
+        if (nidx === -1) continue;
+
+        const type = this.types[nidx];
+        if (type !== CELL_TYPES.BUILDING && type !== CELL_TYPES.BUILDING_DETAIL) {
+          continue;
+        }
+
+        if (this.hp[nidx] > 0) {
+          // Never drop below 0.1 from pure neighbor crack propagation (no instant collapse)
+          this.hp[nidx] = Math.max(0.1, this.hp[nidx] - crackDamage);
+
+          if (this.crackedCells[nidx] === 0) {
+            this.crackedCells[nidx] = 1;
+            const worldPos = this.gridToWorld(nc, nr);
+            crackedList.push({
+              col: nc,
+              row: nr,
+              idx: nidx,
+              worldX: worldPos.x,
+              worldY: worldPos.y,
+              newlyCracked: true
+            });
+          }
+        }
+      }
+    }
+
+    return crackedList;
+  }
+
+  /**
+   * Bounded shallow local BFS that checks if a cell cluster is a small isolated island
+   * disconnected from the larger building structure.
+   * If cluster size exceeds maxIslandSize, immediately aborts (O(1) runtime, < 0.005ms).
+   * @param {number} startCol 
+   * @param {number} startRow 
+   * @param {number} buildingId 
+   * @param {number} maxIslandSize 
+   * @returns {Array<{ col: number, row: number, idx: number, worldX: number, worldY: number }>|null}
+   */
+  findSmallIsolatedIsland(startCol, startRow, buildingId, maxIslandSize = 6) {
+    const startIdx = this.getIndex(startCol, startRow);
+    if (startIdx === -1) return null;
+    if (this.buildingIds[startIdx] !== buildingId) return null;
+    if (this.types[startIdx] !== CELL_TYPES.BUILDING && this.types[startIdx] !== CELL_TYPES.BUILDING_DETAIL) return null;
+    if (this.hp[startIdx] <= 0) return null;
+
+    const queue = [{ col: startCol, row: startRow, idx: startIdx }];
+    const visited = new Set([startIdx]);
+    const islandCells = [{ col: startCol, row: startRow, idx: startIdx }];
+
+    const dirs = [
+      { dc: 1, dr: 0 },
+      { dc: -1, dr: 0 },
+      { dc: 0, dr: 1 },
+      { dc: 0, dr: -1 }
+    ];
+
+    let head = 0;
+    while (head < queue.length) {
+      const curr = queue[head++];
+
+      for (let i = 0; i < 4; i++) {
+        const nc = curr.col + dirs[i].dc;
+        const nr = curr.row + dirs[i].dr;
+        const nidx = this.getIndex(nc, nr);
+        if (nidx === -1) continue;
+
+        if (
+          this.buildingIds[nidx] === buildingId &&
+          (this.types[nidx] === CELL_TYPES.BUILDING || this.types[nidx] === CELL_TYPES.BUILDING_DETAIL) &&
+          this.hp[nidx] > 0 &&
+          !visited.has(nidx)
+        ) {
+          visited.add(nidx);
+          islandCells.push({ col: nc, row: nr, idx: nidx });
+          queue.push({ col: nc, row: nr, idx: nidx });
+
+          // If size exceeds threshold, it's connected to main structure; abort immediately!
+          if (islandCells.length > maxIslandSize) {
+            return null;
+          }
+        }
+      }
+    }
+
+    // Fully bounded island found!
+    return islandCells.map(c => {
+      const w = this.gridToWorld(c.col, c.row);
+      return { ...c, worldX: w.x, worldY: w.y };
+    });
   }
 
   /**

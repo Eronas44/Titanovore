@@ -28,9 +28,32 @@ export const WORLD_CONFIG = {
     shippingContainer: 2
   },
 
-  // Building Collapse Integrity
-  collapseThreshold: 0.45, // Collapse triggered when > 45% of building cells destroyed
-  debrisSpreadRadiusFactor: 1.3, // Outward debris splash radius = building heightLevel * factor
+  // Building Collapse & Destruction Rules (Tahap 2C)
+  building: {
+    collapseMode: 'local', // 'none' | 'local' | 'full' (default: 'local')
+    crackRadius: 1, // Neighbor cell distance (1 = 8-way adjacent cells)
+    crackDamage: 0.35, // Small damage applied to adjacent cells without instant collapse
+    maxIsolatedIslandSize: 6, // Disconnected fragments with <= 6 cells collapse as small rubble
+    maxIsolationChecksPerFrame: 8, // Budgeted local island checks per frame
+    skyscraperDustMultiplier: 1.8, // Tall buildings generate more dust per crushed cell
+    skyscraperShakeMultiplier: 1.5, // Tall buildings generate stronger trample rumble
+    finalCollapseBonusXp: 150 // Bonus XP awarded when the very last cell of a building is destroyed
+  },
+  // Alias for backward compatibility
+  buildingDestruction: {
+    collapseMode: 'local',
+    crackRadius: 1,
+    crackDamage: 0.35,
+    maxIsolatedIslandSize: 6,
+    maxIsolationChecksPerFrame: 8,
+    skyscraperDustMultiplier: 1.8,
+    skyscraperShakeMultiplier: 1.5,
+    finalCollapseBonusXp: 150
+  },
+
+  // Legacy collapse threshold (used only when collapseMode === 'full')
+  collapseThreshold: 0.45,
+  debrisSpreadRadiusFactor: 1.3,
 
   // Road Network (Tighter, denser city grid)
   mainAvenueSpacing: 480, // Distance between wide avenues

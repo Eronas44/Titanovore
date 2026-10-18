@@ -183,6 +183,20 @@ export class ParticleManager {
   }
 
   /**
+   * Closing puff effect when the very last cell of a building is destroyed
+   * @param {number} x 
+   * @param {number} y 
+   * @param {number|string} color 
+   * @param {number} heightLevel 
+   */
+  emitFinalBuildingCollapse(x, y, color, heightLevel = 3) {
+    const scale = Math.min(2.0, 1.0 + heightLevel * 0.1);
+    this.emitDust(x, y, 6, scale);
+    this.emitDebris(x, y, color, 8, 55);
+    this.emitCollapseFlash(x, y, 14);
+  }
+
+  /**
    * Main per-frame update loop.
    * Updates particle physics and performs zero-overhead batch draw.
    * @param {number} dt - Frame delta in seconds

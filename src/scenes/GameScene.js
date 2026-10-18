@@ -37,6 +37,7 @@ export class GameScene extends Phaser.Scene {
     this.activeCollapses = [];
     this.hitstopTimer = 0;
     this.trampleTimer = 0;
+    this.isolationChecksThisFrame = 0;
 
     // 3. Initialize Particle Manager (Pre-allocated zero-GC pools)
     this.particleManager = new ParticleManager(this);
@@ -266,11 +267,16 @@ export class GameScene extends Phaser.Scene {
     if (!this.kaiju.isMoving && this.kaiju.currentSpeed < 4) return;
 
     const { bodyDamageBase, bodySpeedMultiplier, tailDamageMultiplier } = GAME_CONFIG.destruction;
+    const collapseConfig = WORLD_CONFIG.building || WORLD_CONFIG.buildingDestruction || {};
     const bodyFoot = this.kaiju.getBodyFootprint();
     const tailFoots = this.kaiju.getTailFootprints();
 
     // Damage scales with speed and current Kaiju scale
     const baseDamage = (bodyDamageBase + this.kaiju.currentSpeed * bodySpeedMultiplier) * this.kaiju.currentScale;
+
+    this.isolationChecksThisFrame = 0;
+    let crushedDenseCells = 0;
+    let hasSkyscraperTrampled = false;
 
     // 1. Process Body Footprint (Oriented Ellipse)
     const bodyCells = this.cityGrid.getCellsInEllipse(
@@ -281,8 +287,6 @@ export class GameScene extends Phaser.Scene {
       bodyFoot.angle
     );
 
-    let crushedDenseCells = 0;
-
     for (let i = 0; i < bodyCells.length; i++) {
       const cell = bodyCells[i];
       const res = this.cityGrid.damageCell(cell.col, cell.row, baseDamage);
@@ -290,16 +294,10 @@ export class GameScene extends Phaser.Scene {
       if (res && res.damaged) {
         if (res.destroyed) {
           crushedDenseCells++;
-          this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
-
-          // Replace cell on chunk canvas with textured dark rubble
-          this.chunkRenderer.markCellAsRubble(cell.worldX, cell.worldY, res.building.baseColor, true);
-
-          // Emit debris particles matching building color
-          this.particleManager.emitDebris(cell.worldX, cell.worldY, res.building.baseColor, 2, 50);
-
-          // Check Building Collapse
-          this.checkBuildingCollapse(res.building, cell);
+          if (res.building && res.building.heightLevel >= 8) {
+            hasSkyscraperTrampled = true;
+          }
+          this.onCellDestroyed(cell, res.building, true);
         }
       }
     }
@@ -307,10 +305,14 @@ export class GameScene extends Phaser.Scene {
     // 2. Apply dynamic slowdown when crushing dense buildings
     if (crushedDenseCells > 0) {
       this.kaiju.applyResistance(crushedDenseCells * 0.025);
-      // Subtle continuous trample shake
+      // Subtle continuous trample shake (amplified for skyscrapers)
+      let shakeIntensity = GAME_CONFIG.destruction.trampleShakeIntensity;
+      if (hasSkyscraperTrampled) {
+        shakeIntensity *= (collapseConfig.skyscraperShakeMultiplier || 1.5);
+      }
       this.cameras.main.shake(
         GAME_CONFIG.destruction.trampleShakeDuration,
-        GAME_CONFIG.destruction.trampleShakeIntensity
+        shakeIntensity
       );
     }
 
@@ -325,10 +327,10 @@ export class GameScene extends Phaser.Scene {
         const res = this.cityGrid.damageCell(cell.col, cell.row, tailDamage);
 
         if (res && res.destroyed) {
-          this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
-          this.chunkRenderer.markCellAsRubble(cell.worldX, cell.worldY, res.building.baseColor, false);
-          this.particleManager.emitDebris(cell.worldX, cell.worldY, res.building.baseColor, 2, 40);
-          this.checkBuildingCollapse(res.building, cell);
+          if (res.building && res.building.heightLevel >= 8) {
+            hasSkyscraperTrampled = true;
+          }
+          this.onCellDestroyed(cell, res.building, false);
         }
       }
     }
@@ -350,9 +352,116 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Checks if a building's integrity has been breached (> 45% destroyed or center destroyed)
+   * Dispatches cell destruction logic according to active collapseMode ('none' | 'local' | 'full')
+   * In 'local' mode:
+   * - Immediate neighbor cells take minor crack damage and display fracture textures.
+   * - Small isolated cell fragments (<= 6 cells) collapse as small rubble via shallow bounded BFS.
+   * - Skyscrapers generate higher dust/debris without total collapse.
+   * - Building is only marked destroyed when all alive cells reach 0.
+   */
+  onCellDestroyed(cell, building, isBodyTrample = true) {
+    if (!building) return;
+
+    const collapseConfig = WORLD_CONFIG.building || WORLD_CONFIG.buildingDestruction || {};
+    const collapseMode = collapseConfig.collapseMode || 'local';
+    const isSkyscraper = building.heightLevel >= 8;
+
+    this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
+
+    // 1. Mark rubble on chunk canvas
+    this.chunkRenderer.markCellAsRubble(cell.worldX, cell.worldY, building.baseColor, isBodyTrample);
+
+    // 2. Debris & dust emission (scaled for skyscrapers)
+    const dustMult = isSkyscraper ? (collapseConfig.skyscraperDustMultiplier || 1.8) : 1.0;
+    const debrisCount = Math.round((isBodyTrample ? 2 : 2) * dustMult);
+    this.particleManager.emitDebris(cell.worldX, cell.worldY, building.baseColor, debrisCount, isBodyTrample ? 50 : 40);
+
+    if (isSkyscraper) {
+      this.particleManager.emitDust(cell.worldX, cell.worldY, Math.round(1 * dustMult), 1.3);
+    }
+
+    // 3. Mode branching
+    if (collapseMode === 'full') {
+      this.checkBuildingCollapse(building, cell);
+      return;
+    }
+
+    if (collapseMode === 'local') {
+      // A. Neighbor crack propagation (small damage, hairline crack, without dying)
+      const crackedNeighbors = this.cityGrid.applyCrackDamageToNeighbors(
+        cell.col,
+        cell.row,
+        collapseConfig.crackDamage || 0.35,
+        collapseConfig.crackRadius || 1
+      );
+      for (let k = 0; k < crackedNeighbors.length; k++) {
+        const cn = crackedNeighbors[k];
+        if (cn.newlyCracked) {
+          this.chunkRenderer.markCellAsCracked(cn.worldX, cn.worldY);
+        }
+      }
+
+      // B. Isolated island check for small disconnected fragments (<= 6 cells)
+      const maxChecks = collapseConfig.maxIsolationChecksPerFrame || 8;
+      if (this.isolationChecksThisFrame < maxChecks) {
+        const dirs = [
+          { dc: 1, dr: 0 },
+          { dc: -1, dr: 0 },
+          { dc: 0, dr: 1 },
+          { dc: 0, dr: -1 }
+        ];
+
+        for (let d = 0; d < 4; d++) {
+          if (this.isolationChecksThisFrame >= maxChecks) break;
+
+          const nCol = cell.col + dirs[d].dc;
+          const nRow = cell.row + dirs[d].dr;
+          this.isolationChecksThisFrame++;
+
+          const island = this.cityGrid.findSmallIsolatedIsland(
+            nCol,
+            nRow,
+            building.id,
+            collapseConfig.maxIsolatedIslandSize || 6
+          );
+
+          if (island && island.length > 0) {
+            for (let m = 0; m < island.length; m++) {
+              const ic = island[m];
+              this.cityGrid.hp[ic.idx] = 0;
+              this.cityGrid.types[ic.idx] = CELL_TYPES.RUBBLE;
+              this.cityGrid.totalDestroyedCells++;
+              building.aliveCells = Math.max(0, building.aliveCells - 1);
+
+              this.chunkRenderer.markCellAsRubble(ic.worldX, ic.worldY, building.baseColor, false);
+              this.particleManager.emitDebris(ic.worldX, ic.worldY, building.baseColor, 2, 35);
+              this.particleManager.emitDust(ic.worldX, ic.worldY, 1, 0.7);
+              this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Final building collapse: counter & bonus XP triggers ONLY when aliveCells reaches 0!
+    if (building.aliveCells === 0 && !building.isFullyDestroyed) {
+      building.isFullyDestroyed = true;
+      this.stats.buildingsDestroyed++;
+      this.stats.xp += (collapseConfig.finalCollapseBonusXp || 150);
+
+      const bCenterX = building.x + building.width / 2;
+      const bCenterY = building.y + building.height / 2;
+      this.particleManager.emitFinalBuildingCollapse(bCenterX, bCenterY, building.baseColor, building.heightLevel);
+      this.cameras.main.shake(120, 0.0035);
+    }
+  }
+
+  /**
+   * Checks if a building's integrity has been breached (used only when collapseMode === 'full')
    */
   checkBuildingCollapse(building, hitCell) {
+    const collapseConfig = WORLD_CONFIG.building || WORLD_CONFIG.buildingDestruction || {};
+    if (collapseConfig.collapseMode !== 'full') return;
     if (!building || building.isCollapsed) return;
 
     const threshold = WORLD_CONFIG.collapseThreshold || 0.45;

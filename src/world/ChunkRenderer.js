@@ -1120,6 +1120,32 @@ export class ChunkRenderer {
   }
 
   /**
+   * Draws a subtle hairline surface fracture on an intact cell that has taken minor crack damage.
+   * Gives natural jagged edges along the destruction boundary without destroying the neighbor cell.
+   * @param {number} worldX 
+   * @param {number} worldY 
+   */
+  markCellAsCracked(worldX, worldY) {
+    const cx = Math.floor(worldX / this.chunkSize);
+    const cy = Math.floor(worldY / this.chunkSize);
+    const key = `${cx}_${cy}`;
+    const chunk = this.chunks.get(key);
+    if (!chunk || chunk.status !== 'ready' || !chunk.ctx) return;
+
+    const lx = Math.floor(worldX - chunk.x);
+    const ly = Math.floor(worldY - chunk.y);
+
+    const ctx = chunk.ctx;
+    ctx.fillStyle = 'rgba(10, 8, 15, 0.65)';
+    // Subtle hairline fracture line across cell
+    ctx.fillRect(lx + 1, ly, 1, 2);
+    ctx.fillRect(lx + 2, ly + 2, 1, 2);
+
+    chunk.isDirty = true;
+    this.dirtyChunks.add(chunk);
+  }
+
+  /**
    * Draws radiating dark fracture cracks on pavement around major building collapses
    * @param {number} worldX 
    * @param {number} worldY 
