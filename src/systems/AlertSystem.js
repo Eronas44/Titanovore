@@ -31,50 +31,7 @@ export class AlertSystem {
   }
 
   setupVisuals() {
-    // 1. Red Border Vignette Flash (screen edge flash)
-    this.borderFlash = this.scene.add.graphics();
-    this.borderFlash.setScrollFactor(0);
-    this.borderFlash.setDepth(150); // Above HUD, below modal
-    this.borderFlash.setVisible(false);
-
-    // 2. Large "SIAGA X!" Center Banner
-    this.bannerText = this.scene.add.text(
-      this.scene.cameras.main.width / 2,
-      this.scene.cameras.main.height / 2 - 20,
-      '',
-      {
-        fontFamily: 'monospace',
-        fontSize: '20px',
-        fontStyle: 'bold',
-        color: '#ef4444',
-        stroke: '#050408',
-        strokeThickness: 4,
-        align: 'center'
-      }
-    );
-    this.bannerText.setOrigin(0.5);
-    this.bannerText.setScrollFactor(0);
-    this.bannerText.setDepth(151);
-    this.bannerText.setVisible(false);
-
-    // Subtitle description under banner
-    this.bannerSubText = this.scene.add.text(
-      this.scene.cameras.main.width / 2,
-      this.scene.cameras.main.height / 2 + 6,
-      '',
-      {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#fca5a5',
-        stroke: '#050408',
-        strokeThickness: 2,
-        align: 'center'
-      }
-    );
-    this.bannerSubText.setOrigin(0.5);
-    this.bannerSubText.setScrollFactor(0);
-    this.bannerSubText.setDepth(151);
-    this.bannerSubText.setVisible(false);
+    // All banners and red vignette flashes are handled by UIManager in HTML/CSS
   }
 
   /**
@@ -147,67 +104,13 @@ export class AlertSystem {
     // 1. Camera Shake
     this.scene.cameras.main.shake(260, 0.007);
 
-    // 2. Banner Text Pop & Fade
-    this.bannerText.setText(`[ ${name.split(':')[0]}! ]`);
-    this.bannerSubText.setText(name.split(':')[1] ? name.split(':')[1].trim() : '');
-
-    this.bannerText.setVisible(true);
-    this.bannerText.setAlpha(1.0);
-    this.bannerText.setScale(0.8);
-
-    this.bannerSubText.setVisible(true);
-    this.bannerSubText.setAlpha(1.0);
-
-    // Pop animation
-    this.scene.tweens.killTweensOf(this.bannerText);
-    this.scene.tweens.killTweensOf(this.bannerSubText);
-
-    this.scene.tweens.add({
-      targets: this.bannerText,
-      scaleX: 1.15,
-      scaleY: 1.15,
-      duration: 180,
-      yoyo: true,
-      ease: 'Back.easeOut',
-      onComplete: () => {
-        this.scene.tweens.add({
-          targets: [this.bannerText, this.bannerSubText],
-          alpha: 0,
-          y: '-=12',
-          duration: 1200,
-          delay: 400,
-          ease: 'Power2',
-          onComplete: () => {
-            this.bannerText.setVisible(false);
-            this.bannerSubText.setVisible(false);
-            this.bannerText.y = this.scene.cameras.main.height / 2 - 20;
-            this.bannerSubText.y = this.scene.cameras.main.height / 2 + 6;
-          }
-        });
-      }
-    });
-
-    // 3. Screen Edge Red Flash
-    this.borderFlash.clear();
-    const w = this.scene.cameras.main.width;
-    const h = this.scene.cameras.main.height;
-    this.borderFlash.lineStyle(3, 0xef4444, 0.9);
-    this.borderFlash.strokeRect(1, 1, w - 2, h - 2);
-    this.borderFlash.fillStyle(0xef4444, 0.12);
-    this.borderFlash.fillRect(0, 0, w, h);
-    this.borderFlash.setVisible(true);
-    this.borderFlash.setAlpha(1.0);
-
-    this.scene.tweens.killTweensOf(this.borderFlash);
-    this.scene.tweens.add({
-      targets: this.borderFlash,
-      alpha: 0,
-      duration: 650,
-      ease: 'Power2',
-      onComplete: () => {
-        this.borderFlash.setVisible(false);
-      }
-    });
+    // 2. Banner Text Pop & Fade and Red Vignette Flash via HTML UIManager
+    if (this.scene.uiManager) {
+      const titleStr = `${name.split(':')[0]}!`.toUpperCase();
+      const subStr = name.split(':')[1] ? name.split(':')[1].trim() : '';
+      this.scene.uiManager.showEventBanner(titleStr, subStr, 2200);
+      this.scene.uiManager.triggerRedVignetteFlash(700);
+    }
   }
 
   /**
@@ -240,9 +143,5 @@ export class AlertSystem {
     this.noActionTimer = 0.0;
     this.levelFloorProtectionTimer = 0.0;
     this.protectedFloor = 0.0;
-
-    if (this.bannerText) this.bannerText.setVisible(false);
-    if (this.bannerSubText) this.bannerSubText.setVisible(false);
-    if (this.borderFlash) this.borderFlash.setVisible(false);
   }
 }

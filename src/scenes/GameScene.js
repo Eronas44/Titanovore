@@ -19,6 +19,7 @@ import { WeaponSystem } from '../weapons/WeaponSystem.js';
 import { WEAPON_CONFIG } from '../config/weapons.js';
 import { CardSystem } from '../cards/CardSystem.js';
 import { CARD_CONFIG } from '../config/cards.js';
+import { UIManager } from '../ui/UIManager.js';
 
 /**
  * GameScene - Tahap 3B
@@ -114,11 +115,9 @@ export class GameScene extends Phaser.Scene {
     // 9. Camera Setup
     this.setupCamera();
 
-    // 10. HUD Setup
-    this.setupHUD();
-
-    // 10b. Game Over Overlay Setup
-    this.setupGameOverOverlay();
+    // 10. UI Manager (Crisp HTML/CSS Overlay over canvas)
+    this.uiManager = new UIManager('ui-root');
+    this.isExtendedHud = false;
 
     // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga)
     this.setupDebugKeys();
@@ -197,20 +196,10 @@ export class GameScene extends Phaser.Scene {
       });
     });
 
-    // 4. [F3] Key: Toggle HUD / Extended Telemetry
+    // 4. [F3] Key: Toggle HTML Technical Telemetry Overlay
     this.input.keyboard.on('keydown-F3', (event) => {
       event.preventDefault();
-      if (!this.isHudVisible) {
-        this.isHudVisible = true;
-        this.isExtendedHud = false;
-        this.hudContainer.setVisible(true);
-      } else if (!this.isExtendedHud) {
-        this.isExtendedHud = true;
-      } else {
-        this.isHudVisible = false;
-        this.isExtendedHud = false;
-        this.hudContainer.setVisible(false);
-      }
+      this.isExtendedHud = !this.isExtendedHud;
     });
 
     // 5. [F6] Key: (Temporary Debug) Clear nearest air enemies (Helicopters & Drones)
@@ -263,8 +252,8 @@ export class GameScene extends Phaser.Scene {
   respawnKaiju() {
     this.isGameOver = false;
     this.time.timeScale = 1.0;
-    if (this.gameOverContainer) {
-      this.gameOverContainer.setVisible(false);
+    if (this.uiManager) {
+      this.uiManager.closeDeath();
     }
 
     // 1. Reset particle & collapse waves
@@ -323,8 +312,8 @@ export class GameScene extends Phaser.Scene {
   restartCity() {
     this.isGameOver = false;
     this.time.timeScale = 1.0;
-    if (this.gameOverContainer) {
-      this.gameOverContainer.setVisible(false);
+    if (this.uiManager) {
+      this.uiManager.closeDeath();
     }
 
     this.particleManager.reset();
@@ -387,280 +376,87 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Minimal HUD (Pixel font, destruction %, building/human kills, XP counter, HP Bar)
+   * Updates HTML/CSS HUD and telemetry via UIManager
    */
-  setupHUD() {
-    this.hudContainer = this.add.container(6, 6);
-    this.hudContainer.setScrollFactor(0);
-    this.hudContainer.setDepth(100);
-
-    // Dynamic dark panel background
-    this.hudBg = this.add.graphics();
-    this.hudContainer.add(this.hudBg);
-
-    // Health bar & Alert meter graphics
-    this.hudBarGraphics = this.add.graphics();
-    this.hudContainer.add(this.hudBarGraphics);
-
-    // Telemetry text
-    this.hudText = this.add.text(6, 4, '', {
-      fontFamily: 'monospace',
-      fontSize: '7.5px',
-      color: PALETTE.uiTextHex,
-      lineSpacing: 2
-    });
-    this.hudContainer.add(this.hudText);
-
-    // Bottom Screen XP Bar Container (Tahap 4A)
-    this.hudXpContainer = this.add.container(0, 0);
-    this.hudXpContainer.setScrollFactor(0);
-    this.hudXpContainer.setDepth(102);
-
-    this.hudXpGraphics = this.add.graphics();
-    this.hudXpContainer.add(this.hudXpGraphics);
-
-    this.hudXpText = this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 11, '', {
-      fontFamily: 'monospace',
-      fontSize: '6.5px',
-      fontStyle: 'bold',
-      color: '#67e8f9'
-    }).setOrigin(0.5);
-    this.hudXpContainer.add(this.hudXpText);
-
-    this.isHudVisible = GAME_CONFIG.hud.showByDefault;
-    this.isExtendedHud = false;
-    this.hudContainer.setVisible(this.isHudVisible);
-  }
-
   updateHUD() {
-    if (!this.isHudVisible || !this.hudText || !this.hudContainer) return;
+    if (!this.uiManager) return;
 
-    // Compensate for camera zoom to keep HUD pinned at exact top-left screen corner
-    const cam = this.cameras.main;
-    const z = cam.zoom || 1.0;
-    const visibleLeft = (cam.width / 2) * (1 - 1 / z) + (6 / z);
-    const visibleTop = (cam.height / 2) * (1 - 1 / z) + (6 / z);
-    this.hudContainer.setPosition(visibleLeft, visibleTop);
-    this.hudContainer.setScale(1 / z);
-
-    // Pin bottom XP bar to absolute bottom of visible screen
-    if (this.hudXpContainer) {
-      const bottomX = (cam.width / 2) * (1 - 1 / z);
-      const bottomY = (cam.height / 2) * (1 - 1 / z) + (cam.height - cam.height / z);
-      this.hudXpContainer.setPosition(bottomX, bottomY);
-      this.hudXpContainer.setScale(1 / z);
-    }
-
-    const fps = Math.round(this.game.loop.actualFps);
-    const destructionPct = this.cityGrid.getDestructionPercentage().toFixed(1);
-    const scale = this.kaiju.currentScale.toFixed(1);
-    const curHp = Math.ceil(this.kaiju.hp);
+    const curHp = Math.max(0, Math.ceil(this.kaiju.hp));
     const maxHp = this.kaiju.maxHp;
-
     const alertLevel = this.alertSystem ? this.alertSystem.currentLevel : 1;
     const alertVal = this.alertSystem ? this.alertSystem.alert : 0;
     const alertName = this.alertSystem ? this.alertSystem.getLevelName() : 'AMAN';
 
-    // Format survival timer MM:SS
     const mins = Math.floor(this.stats.survivalTime / 60);
     const secs = Math.floor(this.stats.survivalTime % 60);
-    const timeStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const survivalTimeStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
-    // Format equipped weapons string
-    let weaponStr = '';
-    if (this.weaponSystem && this.weaponSystem.equippedWeapons.size > 0) {
-      const parts = [];
+    const totalKills = this.stats.humansKilled +
+      this.stats.policeKilled +
+      this.stats.carsDestroyed +
+      this.stats.tanksDestroyed +
+      this.stats.soldiersKilled +
+      this.stats.helicoptersDestroyed +
+      this.stats.dronesDestroyed;
+    const destructionPct = this.cityGrid.getDestructionPercentage().toFixed(1);
+    const bldgsCount = this.stats.buildingsDestroyed;
+
+    const level = this.xpSystem ? this.xpSystem.level : 1;
+    const xp = this.xpSystem ? this.xpSystem.currentXp : 0;
+    const targetXp = this.xpSystem ? this.xpSystem.targetXp : 20;
+
+    // Weapons with cooldown ratios
+    const weapons = [];
+    if (this.weaponSystem) {
       for (const [id, entry] of this.weaponSystem.equippedWeapons.entries()) {
-        const wDef = WEAPON_CONFIG.weapons[id];
-        const name = wDef ? wDef.name : id;
-        parts.push(`[${name} L${entry.level}]`);
+        const def = WEAPON_CONFIG.weapons[id];
+        const lvlObj = def && def.levels && def.levels[entry.level - 1];
+        const baseCd = lvlObj ? lvlObj.cooldown : (def ? def.cooldown : 1.0);
+        const cdTime = baseCd * (this.weaponSystem.cooldownMultiplier || 1.0);
+        const cdRatio = cdTime > 0 ? (entry.timer / cdTime) : 0;
+        weapons.push({ id, level: entry.level, cdRatio });
       }
-      weaponStr = parts.join(' ');
-    } else {
-      weaponStr = '-';
     }
 
-    // Format active passives string
-    let passiveStr = '';
-    if (this.cardSystem && this.cardSystem.passiveLevels.size > 0) {
-      const parts = [];
-      const passiveShort = {
-        ironSkin: 'Baja',
-        regeneration: 'Regen',
-        magnet: 'Magnet',
-        swiftStride: 'Kaki',
-        colossus: 'Raksasa',
-        carnage: 'Bunuh',
-        rapidFire: 'Cepat',
-        demolisher: 'Perata',
-        thornShield: 'Duri'
-      };
-      for (const [k, lvl] of this.cardSystem.passiveLevels.entries()) {
-        if (lvl > 0) {
-          parts.push(`[${passiveShort[k] || k} L${lvl}]`);
-        }
+    // Passives
+    const passives = [];
+    if (this.cardSystem) {
+      for (const [key, lvl] of this.cardSystem.passiveLevels.entries()) {
+        if (lvl > 0) passives.push({ key, level: lvl });
       }
-      passiveStr = parts.length > 0 ? parts.join(' ') : '-';
-    } else {
-      passiveStr = '-';
     }
 
-    const totalKills = this.stats.humansKilled + this.stats.policeKilled + this.stats.carsDestroyed + this.stats.tanksDestroyed + this.stats.soldiersKilled + this.stats.helicoptersDestroyed + this.stats.dronesDestroyed;
-
-    const panelW = 208;
-    let panelH = 88;
-
-    if (!this.isExtendedHud) {
-      panelH = 88;
-      this.hudText.setText(
-        `HP: ${curHp}/${maxHp} | WAKTU: ${timeStr} | KILLS: ${totalKills}\n` +
-        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(0)}/100) | KOTA: ${destructionPct}%\n` +
-        `SENJATA: ${weaponStr}\n` +
-        `PASIF: ${passiveStr}\n` +
-        `FPS: ${fps} [F3] Detail | [X] LvUp | [C] +500XP`
-      );
-    } else {
-      panelH = 132;
+    // F3 Extended Telemetry
+    let f3Text = '';
+    if (this.isExtendedHud) {
+      const fps = Math.round(this.game.loop.actualFps);
       const tc = this.enemyManager ? this.enemyManager.typeCounts : [0,0,0,0,0,0,0,0];
       const activeTot = this.enemyManager ? this.enemyManager.activeCount : 0;
       const updateMs = this.enemyManager ? this.enemyManager.lastUpdateTimeMs.toFixed(2) : '0.00';
-
-      this.hudText.setText(
-        `HP: ${curHp}/${maxHp} | WAKTU: ${timeStr} | KILLS: ${totalKills}\n` +
-        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(1)}/100) | KOTA: ${destructionPct}%\n` +
-        `SENJATA: ${weaponStr}\n` +
-        `PASIF: ${passiveStr}\n` +
-        `KILLS: C:${this.stats.humansKilled} P:${this.stats.policeKilled} T:${this.stats.tanksDestroyed} S:${this.stats.soldiersKilled} H:${this.stats.helicoptersDestroyed} D:${this.stats.dronesDestroyed}\n` +
-        `ACTIVE: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} (Tot:${activeTot})\n` +
-        `ENEMY UPDATE: ${updateMs}ms | FPS: ${fps}\n` +
-        `[F6] AirKill | [F7/F8] Siaga +/- | [Shift+R] Hard`
-      );
+      f3Text = `FPS: ${fps} | ENEMY UPDATE: ${updateMs}ms | ACTIVE: ${activeTot}\n` +
+               `ENTITIES: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]}\n` +
+               `KAIJU SCALE: ${this.kaiju.currentScale.toFixed(2)}x | ZONE: ${this.currentZoneName}\n` +
+               `[F6] AirKill | [F7/F8] Siaga +/- | [X] LvUp | [C] +500XP`;
     }
 
-    // Redraw crisp dark panel background
-    this.hudBg.clear();
-    this.hudBg.fillStyle(0x0b0a10, 0.90);
-    this.hudBg.fillRoundedRect(0, 0, panelW, panelH, 3);
-    this.hudBg.lineStyle(1, 0x1f2937, 0.7);
-    this.hudBg.strokeRoundedRect(0, 0, panelW, panelH, 3);
-
-    // Render Health bar and Siaga meter bar
-    this.hudBarGraphics.clear();
-    const barW = 196;
-    const barX = 6;
-
-    // 1. Health Bar
-    const hpY = panelH - 14;
-    const hpRatio = Math.max(0, this.kaiju.hp / this.kaiju.maxHp);
-    this.hudBarGraphics.fillStyle(0x18181b, 0.9);
-    this.hudBarGraphics.fillRect(barX, hpY, barW, 4);
-
-    let hpColor = 0x10b981; // Emerald green
-    if (hpRatio < 0.25) hpColor = 0xef4444; // Red
-    else if (hpRatio < 0.50) hpColor = 0xf59e0b; // Amber orange
-    this.hudBarGraphics.fillStyle(hpColor, 1.0);
-    this.hudBarGraphics.fillRect(barX, hpY, Math.round(barW * hpRatio), 4);
-
-    // 2. Siaga Meter Bar (with 5 level segments & 4 notch markers)
-    const alertY = panelH - 7;
-    const alertRatio = Math.max(0, Math.min(1.0, alertVal / 100));
-    this.hudBarGraphics.fillStyle(0x18181b, 0.9);
-    this.hudBarGraphics.fillRect(barX, alertY, barW, 5);
-
-    // Fill color reflects current alert level
-    let alertColor = 0x10b981; // Level 1: Green
-    if (alertLevel === 2) alertColor = 0x38bdf8; // Level 2: Sky Blue
-    else if (alertLevel === 3) alertColor = 0xfacc15; // Level 3: Yellow
-    else if (alertLevel === 4) alertColor = 0xf97316; // Level 4: Orange
-    else if (alertLevel === 5) alertColor = 0xef4444; // Level 5: Red
-
-    this.hudBarGraphics.fillStyle(alertColor, 1.0);
-    this.hudBarGraphics.fillRect(barX, alertY, Math.round(barW * alertRatio), 5);
-
-    // 5 Notch Markers at 20%, 40%, 60%, 80%
-    this.hudBarGraphics.fillStyle(0x09090b, 0.95);
-    const notches = [0.20, 0.40, 0.60, 0.80];
-    for (let n = 0; n < notches.length; n++) {
-      const notchX = barX + Math.round(barW * notches[n]);
-      this.hudBarGraphics.fillRect(notchX, alertY, 1, 5);
-    }
-
-    // 3. Render Bottom Screen XP Bar (Tahap 4A)
-    if (this.hudXpGraphics && this.xpSystem) {
-      this.hudXpGraphics.clear();
-      const xpW = GAME_CONFIG.width;
-      const xpH = 4;
-      const xpY = GAME_CONFIG.height - 4;
-      const xpRatio = Math.max(0, Math.min(1.0, this.xpSystem.currentXp / this.xpSystem.targetXp));
-
-      // Dark background track
-      this.hudXpGraphics.fillStyle(0x0f172a, 0.95);
-      this.hudXpGraphics.fillRect(0, xpY, xpW, xpH);
-
-      // Cyan fill
-      this.hudXpGraphics.fillStyle(0x06b6d4, 1.0);
-      this.hudXpGraphics.fillRect(0, xpY, Math.round(xpW * xpRatio), xpH);
-
-      this.hudXpText.setText(`LEVEL ${this.xpSystem.level}   -   ${Math.floor(this.xpSystem.currentXp)} / ${this.xpSystem.targetXp} XP`);
-    }
-  }
-
-  /**
-   * Sets up the "KAIJU TUMBANG" game over modal overlay
-   */
-  setupGameOverOverlay() {
-    this.gameOverContainer = this.add.container(0, 0);
-    this.gameOverContainer.setScrollFactor(0);
-    this.gameOverContainer.setDepth(200);
-    this.gameOverContainer.setVisible(false);
-
-    // Dark semi-transparent backdrop covering full 480x270 viewport
-    const backdrop = this.add.graphics();
-    backdrop.fillStyle(0x050408, 0.88);
-    backdrop.fillRect(0, 0, GAME_CONFIG.width, GAME_CONFIG.height);
-    this.gameOverContainer.add(backdrop);
-
-    // Modal Card
-    const card = this.add.graphics();
-    const cx = GAME_CONFIG.width / 2;
-    const cy = GAME_CONFIG.height / 2;
-    const cw = 250;
-    const ch = 152;
-    card.fillStyle(0x0f0e17, 0.96);
-    card.fillRoundedRect(cx - cw / 2, cy - ch / 2, cw, ch, 4);
-    card.lineStyle(1.5, 0xef4444, 0.9);
-    card.strokeRoundedRect(cx - cw / 2, cy - ch / 2, cw, ch, 4);
-    this.gameOverContainer.add(card);
-
-    // Title
-    const titleText = this.add.text(cx, cy - 54, 'KAIJU TUMBANG', {
-      fontFamily: 'monospace',
-      fontSize: '16px',
-      fontStyle: 'bold',
-      color: '#ef4444',
-      align: 'center'
-    }).setOrigin(0.5);
-    this.gameOverContainer.add(titleText);
-
-    // Stats summary text
-    this.gameOverStatsText = this.add.text(cx, cy - 6, '', {
-      fontFamily: 'monospace',
-      fontSize: '8px',
-      color: '#cbd5e1',
-      align: 'center',
-      lineSpacing: 4
-    }).setOrigin(0.5);
-    this.gameOverContainer.add(this.gameOverStatsText);
-
-    // Prompt to restart
-    const restartPrompt = this.add.text(cx, cy + 54, '[ TEKAN R UNTUK BANGKIT KEMBALI ]', {
-      fontFamily: 'monospace',
-      fontSize: '9px',
-      fontStyle: 'bold',
-      color: '#fbbf24',
-      align: 'center'
-    }).setOrigin(0.5);
-    this.gameOverContainer.add(restartPrompt);
+    this.uiManager.update({
+      hp: curHp,
+      maxHp,
+      alertLevel,
+      alertVal,
+      alertName,
+      survivalTimeStr,
+      totalKills,
+      destructionPct,
+      bldgsCount,
+      level,
+      xp,
+      targetXp,
+      weapons,
+      passives,
+      f3Visible: this.isExtendedHud,
+      f3Text
+    });
   }
 
   /**
@@ -693,36 +489,28 @@ export class GameScene extends Phaser.Scene {
       this.kaiju.tailSegments.forEach(seg => seg.sprite.setVisible(false));
     }
 
-    // 5. Brief pause before displaying "KAIJU TUMBANG" summary dialog
+    // 5. Brief pause before displaying HTML "KAIJU TUMBANG" summary dialog
     this.time.delayedCall(700, () => {
       this.time.timeScale = 1.0;
-      this.showGameOverModal();
+      if (this.uiManager) {
+        this.uiManager.showDeath({
+          survivalTime: this.stats.survivalTime,
+          level: this.xpSystem ? this.xpSystem.level : 1,
+          destructionPct: this.cityGrid.getDestructionPercentage().toFixed(1),
+          buildingsDestroyed: this.stats.buildingsDestroyed,
+          humansKilled: this.stats.humansKilled,
+          policeKilled: this.stats.policeKilled,
+          carsDestroyed: this.stats.carsDestroyed,
+          tanksDestroyed: this.stats.tanksDestroyed,
+          soldiersKilled: this.stats.soldiersKilled,
+          helicoptersDestroyed: this.stats.helicoptersDestroyed,
+          dronesDestroyed: this.stats.dronesDestroyed,
+          xp: this.stats.xp
+        }, () => {
+          this.respawnKaiju();
+        });
+      }
     });
-  }
-
-  showGameOverModal() {
-    const cam = this.cameras.main;
-    const z = cam.zoom || 1.0;
-    const visibleLeft = (cam.width / 2) * (1 - 1 / z);
-    const visibleTop = (cam.height / 2) * (1 - 1 / z);
-    this.gameOverContainer.setPosition(visibleLeft, visibleTop);
-    this.gameOverContainer.setScale(1 / z);
-
-    const mins = Math.floor(this.stats.survivalTime / 60);
-    const secs = Math.floor(this.stats.survivalTime % 60);
-    const timeStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    const destructionPct = this.cityGrid.getDestructionPercentage().toFixed(1);
-
-    this.gameOverStatsText.setText(
-      `WAKTU BERTAHAN: ${timeStr}\n` +
-      `KOTA HANCUR: ${destructionPct}%\n` +
-      `GEDUNG DIRATAKAN: ${this.stats.buildingsDestroyed}\n` +
-      `WARGA: ${this.stats.humansKilled} | POLISI: ${this.stats.policeKilled} | TANK: ${this.stats.tanksDestroyed}\n` +
-      `TENTARA: ${this.stats.soldiersKilled} | HELI: ${this.stats.helicoptersDestroyed} | DRONE: ${this.stats.dronesDestroyed}\n` +
-      `TOTAL XP: ${this.stats.xp}`
-    );
-
-    this.gameOverContainer.setVisible(true);
   }
 
   /**
@@ -1211,6 +999,12 @@ export class GameScene extends Phaser.Scene {
 
         this.activeCollapses.splice(i, 1);
       }
+    }
+  }
+
+  shutdown() {
+    if (this.uiManager) {
+      this.uiManager.destroy();
     }
   }
 }
