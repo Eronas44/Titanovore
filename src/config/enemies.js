@@ -90,6 +90,69 @@ export const ENEMY_CONFIG = {
       shellLife: 1.2,
       xp: 75,
       spawnWeight: 0.30 // Prominent armored division
+    },
+    SOLDIER: {
+      id: 5,
+      name: 'Tentara Militer',
+      width: 4,
+      height: 5,
+      hp: 6, // More durable infantry
+      speed: 68,
+      shootRangeMin: 85,
+      shootRangeMax: 110,
+      burstCount: 3,
+      burstInterval: 0.12,
+      shootIntervalMin: 1.8,
+      shootIntervalMax: 2.8,
+      bulletSpeed: 215,
+      bulletDamage: 4,
+      bulletLife: 1.0,
+      separationDistance: 16,
+      separationForce: 40,
+      xp: 40
+    },
+    HELICOPTER: {
+      id: 6,
+      name: 'Helikopter Tempur',
+      width: 16,
+      height: 16,
+      hp: 20, // Armored airborne threat
+      speed: 82,
+      isAir: true,
+      orbitRadiusMin: 100,
+      orbitRadiusMax: 140,
+      telegraphDuration: 0.45, // Aiming laser warning
+      burstCount: 3,
+      burstInterval: 0.10,
+      shootIntervalMin: 2.4,
+      shootIntervalMax: 3.4,
+      bulletSpeed: 235,
+      bulletDamage: 5,
+      bulletLife: 1.2,
+      crashDuration: 0.8,
+      crashExplosionRadius: 20,
+      crashBuildingDamage: 2.5,
+      crashEnemyDamage: 30,
+      maxActive: 8,
+      xp: 120
+    },
+    DRONE: {
+      id: 7,
+      name: 'Drone Kamikaze',
+      width: 6,
+      height: 6,
+      hp: 2, // Fragile swarmers
+      speedCruise: 155,
+      speedDive: 245, // High speed dive bomb
+      isAir: true,
+      telegraphDistance: 110,
+      telegraphDuration: 0.50, // Rapid blinking telegraph
+      explosionRadius: 18,
+      explosionKaijuDamage: 15,
+      explosionBuildingDamage: 2.0,
+      explosionEnemyDamage: 25,
+      maxActive: 30,
+      xp: 20
     }
   }
 };

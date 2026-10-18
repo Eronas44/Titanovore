@@ -11,18 +11,18 @@ import { ParticleManager } from '../effects/ParticleManager.js';
 import { EnemyManager, ENEMY_TYPES } from '../enemies/EnemyManager.js';
 import { NavGrid } from '../world/NavGrid.js';
 import { ENEMY_CONFIG } from '../config/enemies.js';
+import { AlertSystem } from '../systems/AlertSystem.js';
+import { ALERT_CONFIG } from '../config/alert.js';
 
 /**
- * GameScene - Tahap 3A-2
+ * GameScene - Tahap 3B
  * Orchestrates:
+ * - AlertSystem threat escalation (Siaga 1 - 5, level notifications, inactivity decay)
+ * - Military & Airborne threats (Soldiers, Attack Helicopters, Kamikaze Drones)
  * - Kaiju body & tail trample damage on 4x4 px grid cells
  * - NavGrid dual-layer walkability (infantry & inflated vehicle) and dynamic flow fields
- * - Building collapse dynamics (progressive wave shattering, falling debris splash, shockwaves)
- * - Particle effects (debris, billowing dust, blood splatters, collapse flashes)
- * - Crowd reactions (panic fleeing, squishing, car crushing)
- * - Enemy navigation without wall-clipping and balanced threat composition (Tanks, Police, Cars, Citizens)
- * - Dynamic Kaiju trampling resistance/slowdown
- * - Debug keys: [F] Scale Up, [R] Clean World Restart, [1-4] Zone Teleport, [F3] HUD Toggle
+ * - RunState vs WorldState persistence (respawning resets Siaga & enemies, city damage persists)
+ * - Debug keys: [F] Scale Up, [R] Respawn, [Shift+R] Full Reset, [F6] Air Kill, [F7/F8] Siaga +/-, [F3] HUD
  */
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -37,6 +37,9 @@ export class GameScene extends Phaser.Scene {
       policeKilled: 0,
       carsDestroyed: 0,
       tanksDestroyed: 0,
+      soldiersKilled: 0,
+      helicoptersDestroyed: 0,
+      dronesDestroyed: 0,
       xp: 0,
       survivalTime: 0
     };
@@ -61,6 +64,9 @@ export class GameScene extends Phaser.Scene {
     // 5b. Initialize 8x8 px Navigation Grid & Flow Field (Tahap 3A-2)
     this.navGrid = new NavGrid(this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, ENEMY_CONFIG.navCellSize);
 
+    // 5c. Initialize Alert System (Siaga 1-5 threat meter - Tahap 3B)
+    this.alertSystem = new AlertSystem(this);
+
     // 6. Chunk Renderer (256x256 px chunks, dirty rect batch rendering, camera culling)
     this.chunkRenderer = new ChunkRenderer(this, this.cityData);
 
@@ -69,8 +75,8 @@ export class GameScene extends Phaser.Scene {
     const spawnY = WORLD_CONFIG.worldHeight / 2;
     this.kaiju = new Kaiju(this, spawnX, spawnY);
 
-    // 8. Spawn High-Performance Enemy & Threat Manager (Tahap 3A-2)
-    this.enemyManager = new EnemyManager(this, this.cityGrid, this.navGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight);
+    // 8. Spawn High-Performance Enemy & Threat Manager (Tahap 3B)
+    this.enemyManager = new EnemyManager(this, this.cityGrid, this.navGrid, this.alertSystem, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight);
 
     // 8b. Spawn Ambient Crowd (Ambient vehicles & decorative pedestrians)
     this.crowd = new Crowd(this, this.cityData);
@@ -84,7 +90,7 @@ export class GameScene extends Phaser.Scene {
     // 10b. Game Over Overlay Setup
     this.setupGameOverOverlay();
 
-    // 11. Debug Hotkeys Setup (F: Grow, R: Reset, 1-4: Teleport, F3: HUD)
+    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga)
     this.setupDebugKeys();
   }
 
@@ -107,20 +113,34 @@ export class GameScene extends Phaser.Scene {
    * [1-4]: Teleport to districts
    * [F3]: Toggle HUD
    */
+  /**
+   * Sets up debug hotkeys:
+   * [F]: Increment Kaiju scale (+0.3 up to 3.0x)
+   * [R]: Bangkit Kembali / Respawn Kaiju (RunState reset: Siaga resets, city damage persists)
+   * [Shift + R]: Hard World Reset (Regenerates entire city from scratch)
+   * [1-4]: Teleport to districts
+   * [F3]: Toggle HUD / telemetry overlay
+   * [F6]: (Temp Debug) Kill nearest air enemies (Helis/Drones) in radius
+   * [F7]: (Temp Debug) Increase Siaga +15
+   * [F8]: (Temp Debug) Decrease Siaga -15
+   */
   setupDebugKeys() {
     // 1. [F] Key: Increment Kaiju scale
     this.input.keyboard.on('keydown-F', () => {
       let nextScale = this.kaiju.currentScale + 0.3;
-      if (nextScale > 3.0) nextScale = 1.0; // Loop back
+      if (nextScale > 3.0) nextScale = 1.0;
       this.kaiju.setKaijuScale(nextScale);
-      // Adjust camera zoom smoothly to keep good visibility
       const targetZoom = Math.max(1.0, GAME_CONFIG.camera.initialZoom - (nextScale - 1.0) * 0.25);
       this.cameras.main.zoomTo(targetZoom, 400);
     });
 
-    // 2. [R] Key: Clean World Restart (Destroys old textures, resets pools)
-    this.input.keyboard.on('keydown-R', () => {
-      this.restartCity();
+    // 2. [R] Key: Bangkit Kembali (RunState reset: Siaga & enemies reset, city damage persists)
+    this.input.keyboard.on('keydown-R', (event) => {
+      if (event.shiftKey) {
+        this.restartCity(); // Hard full world reset
+      } else {
+        this.respawnKaiju(); // RunState respawn: city remains destroyed
+      }
     });
 
     // 3. [1-4] Keys: Zone Teleport
@@ -144,16 +164,100 @@ export class GameScene extends Phaser.Scene {
       });
     });
 
-    // 4. [F3] Key: Toggle HUD
+    // 4. [F3] Key: Toggle HUD / Extended Telemetry
     this.input.keyboard.on('keydown-F3', (event) => {
       event.preventDefault();
-      this.isHudVisible = !this.isHudVisible;
-      this.hudContainer.setVisible(this.isHudVisible);
+      if (!this.isHudVisible) {
+        this.isHudVisible = true;
+        this.isExtendedHud = false;
+        this.hudContainer.setVisible(true);
+      } else if (!this.isExtendedHud) {
+        this.isExtendedHud = true;
+      } else {
+        this.isHudVisible = false;
+        this.isExtendedHud = false;
+        this.hudContainer.setVisible(false);
+      }
+    });
+
+    // 5. [F6] Key: (Temporary Debug) Clear nearest air enemies (Helicopters & Drones)
+    this.input.keyboard.on('keydown-F6', (event) => {
+      event.preventDefault();
+      if (this.enemyManager) {
+        const count = this.enemyManager.debugKillNearestAirEnemies(this.kaiju.x, this.kaiju.y, 280);
+        this.particleManager.emitDebris(this.kaiju.x, this.kaiju.y, 0xef4444, 4, 30);
+      }
+    });
+
+    // 6. [F7] Key: (Temporary Debug) Increase Siaga +15
+    this.input.keyboard.on('keydown-F7', (event) => {
+      event.preventDefault();
+      if (this.alertSystem) {
+        this.alertSystem.setAlert(this.alertSystem.alert + 15);
+      }
+    });
+
+    // 7. [F8] Key: (Temporary Debug) Decrease Siaga -15
+    this.input.keyboard.on('keydown-F8', (event) => {
+      event.preventDefault();
+      if (this.alertSystem) {
+        this.alertSystem.setAlert(this.alertSystem.alert - 15);
+      }
     });
   }
 
   /**
-   * Performs a clean restart of the city without memory leaks or dangling listeners
+   * Bangkit Kembali / Respawn Kaiju:
+   * Resets RunState (Siaga resets to 0 / Level 1, active enemies reset, Kaiju revives),
+   * while keeping WorldState (city damage, rubble, craters, collapsed buildings) completely intact!
+   */
+  respawnKaiju() {
+    this.isGameOver = false;
+    this.time.timeScale = 1.0;
+    if (this.gameOverContainer) {
+      this.gameOverContainer.setVisible(false);
+    }
+
+    // 1. Reset particle & collapse waves
+    this.particleManager.reset();
+    this.activeCollapses = [];
+    this.hitstopTimer = 0;
+
+    // 2. Revive Kaiju & Reset Position
+    const spawnX = WORLD_CONFIG.worldWidth / 2;
+    const spawnY = WORLD_CONFIG.worldHeight / 2;
+    this.kaiju.isDead = false;
+    this.kaiju.hp = this.kaiju.maxHp;
+    this.kaiju.container.setVisible(true);
+    if (this.kaiju.leftFoot) this.kaiju.leftFoot.setVisible(true);
+    if (this.kaiju.rightFoot) this.kaiju.rightFoot.setVisible(true);
+    if (this.kaiju.tailSegments) {
+      this.kaiju.tailSegments.forEach(seg => seg.sprite.setVisible(true));
+    }
+    this.kaiju.resetPosition(spawnX, spawnY);
+    this.kaiju.setKaijuScale(1.0);
+    this.cameras.main.setZoom(GAME_CONFIG.camera.initialZoom);
+
+    // 3. Reset RunState: Siaga resets to 0 (Level 1), active enemies clear & spawn table resets
+    if (this.alertSystem) {
+      this.alertSystem.reset();
+    }
+    if (this.enemyManager) {
+      this.enemyManager.reset();
+    }
+    if (this.crowd) {
+      this.crowd.reset();
+    }
+
+    // 4. Reset Run Telemetry (City destruction stats remain accumulated)
+    this.stats.survivalTime = 0;
+
+    // 5. WorldState remains intact: cityGrid, rubble, chunkRenderer textures are NOT wiped!
+    this.chunkRenderer.update(this.cameras.main);
+  }
+
+  /**
+   * Performs a hard clean restart of the entire city from scratch (used on Shift+R)
    */
   restartCity() {
     this.isGameOver = false;
@@ -162,55 +266,47 @@ export class GameScene extends Phaser.Scene {
       this.gameOverContainer.setVisible(false);
     }
 
-    // 1. Reset particle pools
     this.particleManager.reset();
-
-    // 2. Clear active collapse animations
     this.activeCollapses = [];
     this.hitstopTimer = 0;
 
-    // 3. Destroy old chunk textures & images
     this.chunkRenderer.destroy();
 
-    // 4. Reset CityGrid
     this.cityGrid = new CityGrid(WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, WORLD_CONFIG.cellSize);
-
-    // 5. Re-generate procedural city
     this.cityData = this.cityGenerator.generate(this.cityGrid);
-
-    // 6. Re-create ChunkRenderer
+    this.navGrid = new NavGrid(this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, ENEMY_CONFIG.navCellSize);
     this.chunkRenderer = new ChunkRenderer(this, this.cityData);
 
-    // 6b. Re-create NavGrid (Tahap 3A-2)
-    this.navGrid = new NavGrid(this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, ENEMY_CONFIG.navCellSize);
-
-    // 7. Reset EnemyManager & Crowd
+    if (this.alertSystem) {
+      this.alertSystem.reset();
+    }
     if (this.enemyManager) {
       this.enemyManager.cityGrid = this.cityGrid;
       this.enemyManager.navGrid = this.navGrid;
+      this.enemyManager.alertSystem = this.alertSystem;
       this.enemyManager.reset();
     }
     this.crowd.reset();
 
-    // 8. Reset Kaiju position and stats
     const spawnX = WORLD_CONFIG.worldWidth / 2;
     const spawnY = WORLD_CONFIG.worldHeight / 2;
     this.kaiju.resetPosition(spawnX, spawnY);
     this.kaiju.setKaijuScale(1.0);
     this.cameras.main.setZoom(GAME_CONFIG.camera.initialZoom);
 
-    // 9. Reset stats
     this.stats = {
       buildingsDestroyed: 0,
       humansKilled: 0,
       policeKilled: 0,
       carsDestroyed: 0,
       tanksDestroyed: 0,
+      soldiersKilled: 0,
+      helicoptersDestroyed: 0,
+      dronesDestroyed: 0,
       xp: 0,
       survivalTime: 0
     };
 
-    // Immediate view refresh
     this.chunkRenderer.update(this.cameras.main);
   }
 
@@ -222,13 +318,11 @@ export class GameScene extends Phaser.Scene {
     this.hudContainer.setScrollFactor(0);
     this.hudContainer.setDepth(100);
 
-    // Crisp dark panel
+    // Dynamic dark panel background
     this.hudBg = this.add.graphics();
-    this.hudBg.fillStyle(0x0b0a10, 0.88);
-    this.hudBg.fillRoundedRect(0, 0, 186, 70, 3);
     this.hudContainer.add(this.hudBg);
 
-    // Health bar graphics
+    // Health bar & Alert meter graphics
     this.hudBarGraphics = this.add.graphics();
     this.hudContainer.add(this.hudBarGraphics);
 
@@ -242,6 +336,7 @@ export class GameScene extends Phaser.Scene {
     this.hudContainer.add(this.hudText);
 
     this.isHudVisible = GAME_CONFIG.hud.showByDefault;
+    this.isExtendedHud = false;
     this.hudContainer.setVisible(this.isHudVisible);
   }
 
@@ -262,33 +357,86 @@ export class GameScene extends Phaser.Scene {
     const curHp = Math.ceil(this.kaiju.hp);
     const maxHp = this.kaiju.maxHp;
 
-    this.hudText.setText(
-      `HP: ${curHp}/${maxHp} | XP: ${this.stats.xp}\n` +
-      `DESTRUCT: ${destructionPct}% | BLDGS: ${this.stats.buildingsDestroyed}\n` +
-      `CITIZEN: ${this.stats.humansKilled} | POL: ${this.stats.policeKilled} | TANK: ${this.stats.tanksDestroyed}\n` +
-      `SCALE: ${scale}x | FPS: ${fps} [F3] HUD\n` +
-      `[F] Grow | [R] Reset | [1-4] Zones`
-    );
+    const alertLevel = this.alertSystem ? this.alertSystem.currentLevel : 1;
+    const alertVal = this.alertSystem ? this.alertSystem.alert : 0;
+    const alertName = this.alertSystem ? this.alertSystem.getLevelName() : 'AMAN';
 
-    // Dynamic color health bar
+    const panelW = 196;
+    let panelH = 76;
+
+    if (!this.isExtendedHud) {
+      panelH = 76;
+      this.hudText.setText(
+        `HP: ${curHp}/${maxHp} | XP: ${this.stats.xp}\n` +
+        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(0)}/100)\n` +
+        `DESTRUCT: ${destructionPct}% | BLDGS: ${this.stats.buildingsDestroyed}\n` +
+        `FPS: ${fps} | SCALE: ${scale}x [F3] Telemetry\n` +
+        `[F] Grow | [R] Revive | [1-4] Zones`
+      );
+    } else {
+      panelH = 114;
+      const tc = this.enemyManager ? this.enemyManager.typeCounts : [0,0,0,0,0,0,0,0];
+      const activeTot = this.enemyManager ? this.enemyManager.activeCount : 0;
+      const updateMs = this.enemyManager ? this.enemyManager.lastUpdateTimeMs.toFixed(2) : '0.00';
+
+      this.hudText.setText(
+        `HP: ${curHp}/${maxHp} | XP: ${this.stats.xp}\n` +
+        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(1)}/100)\n` +
+        `DESTRUCT: ${destructionPct}% | BLDGS: ${this.stats.buildingsDestroyed}\n` +
+        `KILLS: C:${this.stats.humansKilled} P:${this.stats.policeKilled} T:${this.stats.tanksDestroyed} S:${this.stats.soldiersKilled} H:${this.stats.helicoptersDestroyed} D:${this.stats.dronesDestroyed}\n` +
+        `ACTIVE: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} (Tot:${activeTot})\n` +
+        `ENEMY UPDATE: ${updateMs}ms | FPS: ${fps}\n` +
+        `[F6] AirKill | [F7/F8] Siaga +/- | [Shift+R] Hard`
+      );
+    }
+
+    // Redraw crisp dark panel background
+    this.hudBg.clear();
+    this.hudBg.fillStyle(0x0b0a10, 0.90);
+    this.hudBg.fillRoundedRect(0, 0, panelW, panelH, 3);
+    this.hudBg.lineStyle(1, 0x1f2937, 0.7);
+    this.hudBg.strokeRoundedRect(0, 0, panelW, panelH, 3);
+
+    // Render Health bar and Siaga meter bar
     this.hudBarGraphics.clear();
-    const hpRatio = Math.max(0, this.kaiju.hp / this.kaiju.maxHp);
-    const barW = 174;
-    const barH = 5;
+    const barW = 184;
     const barX = 6;
-    const barY = 59;
 
-    // Background track
+    // 1. Health Bar
+    const hpY = panelH - 14;
+    const hpRatio = Math.max(0, this.kaiju.hp / this.kaiju.maxHp);
     this.hudBarGraphics.fillStyle(0x18181b, 0.9);
-    this.hudBarGraphics.fillRect(barX, barY, barW, barH);
+    this.hudBarGraphics.fillRect(barX, hpY, barW, 4);
 
-    // Fill color based on current health ratio
-    let fillColor = 0x10b981; // Emerald green
-    if (hpRatio < 0.25) fillColor = 0xef4444; // Red
-    else if (hpRatio < 0.50) fillColor = 0xf59e0b; // Amber orange
+    let hpColor = 0x10b981; // Emerald green
+    if (hpRatio < 0.25) hpColor = 0xef4444; // Red
+    else if (hpRatio < 0.50) hpColor = 0xf59e0b; // Amber orange
+    this.hudBarGraphics.fillStyle(hpColor, 1.0);
+    this.hudBarGraphics.fillRect(barX, hpY, Math.round(barW * hpRatio), 4);
 
-    this.hudBarGraphics.fillStyle(fillColor, 1.0);
-    this.hudBarGraphics.fillRect(barX, barY, Math.round(barW * hpRatio), barH);
+    // 2. Siaga Meter Bar (with 5 level segments & 4 notch markers)
+    const alertY = panelH - 7;
+    const alertRatio = Math.max(0, Math.min(1.0, alertVal / 100));
+    this.hudBarGraphics.fillStyle(0x18181b, 0.9);
+    this.hudBarGraphics.fillRect(barX, alertY, barW, 5);
+
+    // Fill color reflects current alert level
+    let alertColor = 0x10b981; // Level 1: Green
+    if (alertLevel === 2) alertColor = 0x38bdf8; // Level 2: Sky Blue
+    else if (alertLevel === 3) alertColor = 0xfacc15; // Level 3: Yellow
+    else if (alertLevel === 4) alertColor = 0xf97316; // Level 4: Orange
+    else if (alertLevel === 5) alertColor = 0xef4444; // Level 5: Red
+
+    this.hudBarGraphics.fillStyle(alertColor, 1.0);
+    this.hudBarGraphics.fillRect(barX, alertY, Math.round(barW * alertRatio), 5);
+
+    // 5 Notch Markers at 20%, 40%, 60%, 80%
+    this.hudBarGraphics.fillStyle(0x09090b, 0.95);
+    const notches = [0.20, 0.40, 0.60, 0.80];
+    for (let n = 0; n < notches.length; n++) {
+      const notchX = barX + Math.round(barW * notches[n]);
+      this.hudBarGraphics.fillRect(notchX, alertY, 1, 5);
+    }
   }
 
   /**
@@ -398,6 +546,7 @@ export class GameScene extends Phaser.Scene {
       `KOTA HANCUR: ${destructionPct}%\n` +
       `GEDUNG DIRATAKAN: ${this.stats.buildingsDestroyed}\n` +
       `WARGA: ${this.stats.humansKilled} | POLISI: ${this.stats.policeKilled} | TANK: ${this.stats.tanksDestroyed}\n` +
+      `TENTARA: ${this.stats.soldiersKilled} | HELI: ${this.stats.helicoptersDestroyed} | DRONE: ${this.stats.dronesDestroyed}\n` +
       `TOTAL XP: ${this.stats.xp}`
     );
 
@@ -418,6 +567,11 @@ export class GameScene extends Phaser.Scene {
 
     if (!this.isGameOver) {
       this.stats.survivalTime += dt;
+    }
+
+    // 1b. Update AlertSystem threat escalation (Siaga 1-5, meter decay, floor timer)
+    if (this.alertSystem) {
+      this.alertSystem.update(dt);
     }
 
     // 2. Update Kaiju physics & animation
@@ -445,7 +599,7 @@ export class GameScene extends Phaser.Scene {
       this.navGrid.updateFlowField(this.kaiju.x, this.kaiju.y, dt);
     }
 
-    // 5. Update Enemies & Threat Manager (Tahap 3A-2)
+    // 5. Update Enemies & Threat Manager (Tahap 3B)
     if (this.enemyManager) {
       this.enemyManager.update(this.cameras.main, dt, this.kaiju, this.particleManager);
     }
@@ -539,7 +693,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // 4. Process Enemies Trampling (Tahap 3A: Panicking citizens, police, police cars)
+    // 4. Process Enemies Trampling (Tahap 3B: Ground threats crushed by feet/tail)
     if (this.enemyManager) {
       this.enemyManager.checkKaijuTrample(
         bodyFoot,
@@ -549,12 +703,19 @@ export class GameScene extends Phaser.Scene {
           this.stats.xp += xpGained;
           if (eType === ENEMY_TYPES.CITIZEN) {
             this.stats.humansKilled++;
+            if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killCivilian);
           } else if (eType === ENEMY_TYPES.POLICE) {
             this.stats.policeKilled++;
+            if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killPolice);
           } else if (eType === ENEMY_TYPES.POLICE_CAR) {
             this.stats.carsDestroyed++;
+            if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killPolice);
           } else if (eType === ENEMY_TYPES.TANK) {
             this.stats.tanksDestroyed++;
+            if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killTank);
+          } else if (eType === ENEMY_TYPES.SOLDIER) {
+            this.stats.soldiersKilled++;
+            if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killSoldier);
           }
         }
       );
@@ -568,10 +729,12 @@ export class GameScene extends Phaser.Scene {
       () => {
         this.stats.humansKilled++;
         this.stats.xp += GAME_CONFIG.destruction.xpPerHuman;
+        if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killCivilian);
       },
       () => {
         this.stats.carsDestroyed++;
         this.stats.xp += GAME_CONFIG.destruction.xpPerCar;
+        if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killPolice);
       }
     );
   }
@@ -593,6 +756,9 @@ export class GameScene extends Phaser.Scene {
     const isSkyscraper = building.heightLevel >= 8;
 
     this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
+    if (this.alertSystem) {
+      this.alertSystem.addAlert(ALERT_CONFIG.gains.cellDestroyed);
+    }
 
     // 1. Mark rubble on chunk canvas & notify NavGrid of newly walkable rubble
     this.chunkRenderer.markCellAsRubble(cell.worldX, cell.worldY, building.baseColor, isBodyTrample);
@@ -669,6 +835,9 @@ export class GameScene extends Phaser.Scene {
               this.particleManager.emitDebris(ic.worldX, ic.worldY, building.baseColor, 2, 35);
               this.particleManager.emitDust(ic.worldX, ic.worldY, 1, 0.7);
               this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
+              if (this.alertSystem) {
+                this.alertSystem.addAlert(ALERT_CONFIG.gains.cellDestroyed);
+              }
             }
           }
         }
@@ -680,6 +849,9 @@ export class GameScene extends Phaser.Scene {
       building.isFullyDestroyed = true;
       this.stats.buildingsDestroyed++;
       this.stats.xp += (collapseConfig.finalCollapseBonusXp || 150);
+      if (this.alertSystem) {
+        this.alertSystem.addAlert(ALERT_CONFIG.gains.buildingDestroyed);
+      }
 
       const bCenterX = building.x + building.width / 2;
       const bCenterY = building.y + building.height / 2;

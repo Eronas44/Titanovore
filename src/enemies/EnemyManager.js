@@ -1,4 +1,5 @@
 import { ENEMY_CONFIG } from '../config/enemies.js';
+import { ALERT_CONFIG } from '../config/alert.js';
 import { CELL_TYPES } from '../world/CityGrid.js';
 import { PRNG } from '../utils/prng.js';
 
@@ -7,31 +8,36 @@ export const ENEMY_TYPES = {
   CITIZEN: 1,
   POLICE: 2,
   POLICE_CAR: 3,
-  TANK: 4
+  TANK: 4,
+  SOLDIER: 5,
+  HELICOPTER: 6,
+  DRONE: 7
 };
 
 /**
- * High-Performance Enemy & Threat Manager - Tahap 3A-2
+ * High-Performance Enemy & Threat Manager - Tahap 3B
  * Architecture:
  * - Data-Oriented Design (Structure of Arrays using typed Float32/Int16/Uint8 arrays)
  * - Zero GC runtime allocations: Fixed pre-allocated sprite pool & bullet pool
- * - NavGrid Flow Field & Wall Collision Resolution (prevents wall clipping, enables dynamic rubble paths)
+ * - NavGrid Flow Field & Wall Collision Resolution for Ground Units
+ * - Airborne Layer (Helicopters & Drones) flying over buildings with ground shadows
+ * - Scaled Spawning driven by AlertSystem (Siaga 1 - 5)
  * - Spatial Hash Grid (32x32 px cells) for O(1) neighbor lookups, separation, and trample
- * - Distance-tiered updates: Full AI within activeUpdateRadius, sparse/frozen beyond
- * - Off-screen ring spawning along streets with automatic recycling on despawn
  */
 export class EnemyManager {
   /**
    * @param {Phaser.Scene} scene 
    * @param {Object} cityGrid - CityGrid instance
    * @param {Object} navGrid - NavGrid navigation instance
+   * @param {Object} alertSystem - AlertSystem threat escalation instance
    * @param {number} worldWidth 
    * @param {number} worldHeight 
    */
-  constructor(scene, cityGrid, navGrid, worldWidth = 4000, worldHeight = 4000) {
+  constructor(scene, cityGrid, navGrid, alertSystem, worldWidth = 4000, worldHeight = 4000) {
     this.scene = scene;
     this.cityGrid = cityGrid;
     this.navGrid = navGrid;
+    this.alertSystem = alertSystem;
     this.worldWidth = worldWidth;
     this.worldHeight = worldHeight;
     this.prng = new PRNG(1337);
@@ -47,18 +53,29 @@ export class EnemyManager {
     this.vy = new Float32Array(this.maxEnemies);
     this.hp = new Float32Array(this.maxEnemies);
     this.maxHp = new Float32Array(this.maxEnemies);
-    this.type = new Uint8Array(this.maxEnemies); // 0=none, 1=citizen, 2=police, 3=police_car, 4=tank
-    this.state = new Uint8Array(this.maxEnemies); // 0=wander, 1=flee/engage, 2=retreat
-    this.timer = new Float32Array(this.maxEnemies); // shoot/animation timers
+    this.type = new Uint8Array(this.maxEnemies); // 0..7
+    this.state = new Uint8Array(this.maxEnemies); // 0=wander/orbit/cruise, 1=flee/telegraph, 2=dive/fire, 3=crashing
+    this.timer = new Float32Array(this.maxEnemies); // shoot/animation/telegraph timers
     this.rotation = new Float32Array(this.maxEnemies);
     this.active = new Uint8Array(this.maxEnemies);
-    this.subType = new Uint8Array(this.maxEnemies); // visual variation (clothes/siren)
+    this.subType = new Uint8Array(this.maxEnemies); // visual variation / rotor frames
+
+    // Specialized SoA properties for military squads & airborne units
+    this.targetX = new Float32Array(this.maxEnemies); // heli orbit angle / drone target X / soldier offset X
+    this.targetY = new Float32Array(this.maxEnemies); // drone target Y / soldier offset Y
+    this.burstCount = new Uint8Array(this.maxEnemies); // remaining bullets in volley burst
+    this.burstTimer = new Float32Array(this.maxEnemies); // delay between shots in burst
+    this.isAir = new Uint8Array(this.maxEnemies); // 1 = airborne (heli, drone), 0 = ground
 
     this.freeIndices = [];
     for (let i = this.maxEnemies - 1; i >= 0; i--) {
       this.freeIndices.push(i);
     }
     this.activeCount = 0;
+
+    // Counts per type for O(1) telemetry and spawn limiting
+    this.typeCounts = new Uint16Array(8);
+    this.lastUpdateTimeMs = 0;
 
     // 2. Structure of Arrays for Enemy Projectiles
     this.bulletX = new Float32Array(this.maxBullets);
@@ -68,7 +85,7 @@ export class EnemyManager {
     this.bulletLife = new Float32Array(this.maxBullets);
     this.bulletActive = new Uint8Array(this.maxBullets);
     this.bulletDamage = new Float32Array(this.maxBullets);
-    this.bulletIsShell = new Uint8Array(this.maxBullets); // 0=standard bullet, 1=heavy tank shell
+    this.bulletIsShell = new Uint8Array(this.maxBullets); // 0=bullet, 1=heavy tank shell
 
     this.freeBulletIndices = [];
     for (let i = this.maxBullets - 1; i >= 0; i--) {
@@ -94,8 +111,10 @@ export class EnemyManager {
       this.sprites[i] = sprite;
     }
 
-    // 5. Dedicated Graphics Batch for Bullet & Shell Tracers
-    this.bulletGraphics = this.scene.add.graphics().setDepth(16);
+    // 5. Dedicated Graphics Batches (Zero-GC)
+    this.airShadowGraphics = this.scene.add.graphics().setDepth(8); // Below Kaiju, above pavement
+    this.bulletGraphics = this.scene.add.graphics().setDepth(16); // Projectiles
+    this.telegraphGraphics = this.scene.add.graphics().setDepth(26); // Aiming lasers & warning beams
 
     // 6. Spawn timers
     this.spawnTimer = 0;
@@ -169,15 +188,21 @@ export class EnemyManager {
     this.vx[idx] = 0;
     this.vy[idx] = 0;
     this.rotation[idx] = rotation;
-    this.state[idx] = 0; // WANDER
+    this.state[idx] = 0; // WANDER / ORBIT / CRUISE
+    this.burstCount[idx] = 0;
+    this.burstTimer[idx] = 0;
+    this.targetX[idx] = 0;
+    this.targetY[idx] = 0;
+    this.isAir[idx] = 0;
     this.activeCount++;
+    this.typeCounts[type]++;
 
     const tCfg = ENEMY_CONFIG.types;
     if (type === ENEMY_TYPES.CITIZEN) {
       this.hp[idx] = tCfg.CITIZEN.hp;
       this.maxHp[idx] = tCfg.CITIZEN.hp;
-      this.timer[idx] = this.prng.range(1.0, 3.0); // Random wander change timer
-      this.subType[idx] = this.prng.rangeInt(0, 3); // 4 clothing colors
+      this.timer[idx] = this.prng.range(1.0, 3.0);
+      this.subType[idx] = this.prng.rangeInt(0, 3);
     } else if (type === ENEMY_TYPES.POLICE) {
       this.hp[idx] = tCfg.POLICE.hp;
       this.maxHp[idx] = tCfg.POLICE.hp;
@@ -186,13 +211,33 @@ export class EnemyManager {
     } else if (type === ENEMY_TYPES.POLICE_CAR) {
       this.hp[idx] = tCfg.POLICE_CAR.hp;
       this.maxHp[idx] = tCfg.POLICE_CAR.hp;
-      this.timer[idx] = 0; // Siren toggle timer
-      this.subType[idx] = 0; // Frame 0
+      this.timer[idx] = 0;
+      this.subType[idx] = 0;
     } else if (type === ENEMY_TYPES.TANK) {
       this.hp[idx] = tCfg.TANK.hp;
       this.maxHp[idx] = tCfg.TANK.hp;
       this.timer[idx] = this.prng.range(tCfg.TANK.shootIntervalMin, tCfg.TANK.shootIntervalMax);
       this.subType[idx] = 0;
+    } else if (type === ENEMY_TYPES.SOLDIER) {
+      this.hp[idx] = tCfg.SOLDIER.hp;
+      this.maxHp[idx] = tCfg.SOLDIER.hp;
+      this.timer[idx] = this.prng.range(tCfg.SOLDIER.shootIntervalMin, tCfg.SOLDIER.shootIntervalMax);
+      this.subType[idx] = 0;
+      this.targetX[idx] = this.prng.range(-8, 8); // Squad formation jitter
+      this.targetY[idx] = this.prng.range(-8, 8);
+    } else if (type === ENEMY_TYPES.HELICOPTER) {
+      this.hp[idx] = tCfg.HELICOPTER.hp;
+      this.maxHp[idx] = tCfg.HELICOPTER.hp;
+      this.timer[idx] = this.prng.range(1.0, tCfg.HELICOPTER.shootIntervalMax);
+      this.subType[idx] = 0;
+      this.isAir[idx] = 1;
+      this.targetX[idx] = rotation; // Initial orbit angle
+    } else if (type === ENEMY_TYPES.DRONE) {
+      this.hp[idx] = tCfg.DRONE.hp;
+      this.maxHp[idx] = tCfg.DRONE.hp;
+      this.timer[idx] = 0;
+      this.subType[idx] = 0;
+      this.isAir[idx] = 1;
     }
 
     return idx;
@@ -204,12 +249,15 @@ export class EnemyManager {
   despawnEnemy(idx) {
     if (!this.active[idx]) return;
 
+    const oldType = this.type[idx];
     this.active[idx] = 0;
     this.type[idx] = ENEMY_TYPES.INACTIVE;
+    this.isAir[idx] = 0;
     this.sprites[idx].setVisible(false);
     this.sprites[idx].setActive(false);
     this.freeIndices.push(idx);
     this.activeCount = Math.max(0, this.activeCount - 1);
+    this.typeCounts[oldType] = Math.max(0, this.typeCounts[oldType] - 1);
   }
 
   /**
@@ -244,56 +292,95 @@ export class EnemyManager {
   }
 
   /**
-   * Spawns a batch of enemies along a ring just outside the camera viewport on streets/open ground.
+   * Spawns enemies dynamically based on the current Siaga threat level.
    */
   updateSpawning(camera, dt) {
+    const level = this.alertSystem ? this.alertSystem.currentLevel : 1;
+    const table = ALERT_CONFIG.spawnTables[level] || ALERT_CONFIG.spawnTables[1];
+
     this.spawnTimer += dt * 1000;
-    if (this.spawnTimer < ENEMY_CONFIG.spawnIntervalMs) return;
+    if (this.spawnTimer < table.spawnIntervalMs) return;
     this.spawnTimer = 0;
 
-    if (this.activeCount >= this.maxEnemies) return;
+    if (this.activeCount >= table.maxActiveTotal || this.activeCount >= this.maxEnemies) return;
 
     const camX = camera.scrollX + camera.width / 2;
     const camY = camera.scrollY + camera.height / 2;
-    const { spawnRingInnerRadius, spawnRingOuterRadius, spawnBatchSize, types } = ENEMY_CONFIG;
+    const { spawnRingInnerRadius, spawnRingOuterRadius } = ENEMY_CONFIG;
 
-    for (let b = 0; b < spawnBatchSize; b++) {
-      if (this.activeCount >= this.maxEnemies) break;
+    // Build list of eligible types based on active limits and weights
+    const eligibleTypes = [];
+    let totalWeight = 0;
+
+    const typeMapping = [
+      { id: ENEMY_TYPES.CITIZEN, key: 'CITIZEN' },
+      { id: ENEMY_TYPES.POLICE, key: 'POLICE' },
+      { id: ENEMY_TYPES.POLICE_CAR, key: 'POLICE_CAR' },
+      { id: ENEMY_TYPES.TANK, key: 'TANK' },
+      { id: ENEMY_TYPES.SOLDIER, key: 'SOLDIER' },
+      { id: ENEMY_TYPES.HELICOPTER, key: 'HELICOPTER' },
+      { id: ENEMY_TYPES.DRONE, key: 'DRONE' }
+    ];
+
+    for (let t = 0; t < typeMapping.length; t++) {
+      const item = typeMapping[t];
+      const weight = table.weights[item.key] || 0;
+      const limit = table.typeLimits[item.key] || 0;
+      if (weight > 0 && this.typeCounts[item.id] < limit) {
+        eligibleTypes.push({ id: item.id, weight });
+        totalWeight += weight;
+      }
+    }
+
+    if (eligibleTypes.length === 0 || totalWeight <= 0) return;
+
+    for (let b = 0; b < table.spawnBatchSize; b++) {
+      if (this.activeCount >= table.maxActiveTotal || this.activeCount >= this.maxEnemies) break;
+
+      // Select type by roulette
+      let r = this.prng.range(0, totalWeight);
+      let selectedType = eligibleTypes[0].id;
+      for (let e = 0; e < eligibleTypes.length; e++) {
+        r -= eligibleTypes[e].weight;
+        if (r <= 0) {
+          selectedType = eligibleTypes[e].id;
+          break;
+        }
+      }
 
       const angle = this.prng.range(0, Math.PI * 2);
       const dist = this.prng.range(spawnRingInnerRadius, spawnRingOuterRadius);
       let sx = camX + Math.cos(angle) * dist;
       let sy = camY + Math.sin(angle) * dist;
 
-      // Bound to world
+      // Clamp to world
       if (sx < 60 || sx > this.worldWidth - 60 || sy < 60 || sy > this.worldHeight - 60) {
         continue;
       }
 
-      // Roll enemy type according to weights:
-      // CITIZEN: 0.15, POLICE: 0.45, POLICE_CAR: 0.10, TANK: 0.30
-      const roll = this.prng.next();
-      let selectedType = ENEMY_TYPES.CITIZEN;
-      const wCitizen = types.CITIZEN.spawnWeight;
-      const wPolice = wCitizen + types.POLICE.spawnWeight;
-      const wCar = wPolice + types.POLICE_CAR.spawnWeight;
-
-      if (roll < wCitizen) {
-        selectedType = ENEMY_TYPES.CITIZEN;
-      } else if (roll < wPolice) {
-        selectedType = ENEMY_TYPES.POLICE;
-      } else if (roll < wCar) {
-        selectedType = ENEMY_TYPES.POLICE_CAR;
-      } else {
-        selectedType = ENEMY_TYPES.TANK;
+      // AIRBORNE SPAWNING (Helicopters & Kamikaze Drones)
+      if (selectedType === ENEMY_TYPES.HELICOPTER) {
+        this.spawnEnemy(selectedType, sx, sy, angle + Math.PI);
+        continue;
       }
 
-      const isVehicle = selectedType === ENEMY_TYPES.TANK || selectedType === ENEMY_TYPES.POLICE_CAR;
+      if (selectedType === ENEMY_TYPES.DRONE) {
+        // Spawn swarm of 5-8 drones from same sector edge
+        const swarmCount = this.prng.rangeInt(5, 8);
+        for (let s = 0; s < swarmCount; s++) {
+          if (this.activeCount >= table.maxActiveTotal || this.activeCount >= this.maxEnemies) break;
+          if (this.typeCounts[ENEMY_TYPES.DRONE] >= table.typeLimits.DRONE) break;
+          const jx = sx + this.prng.range(-24, 24);
+          const jy = sy + this.prng.range(-24, 24);
+          this.spawnEnemy(selectedType, jx, jy, angle + Math.PI);
+        }
+        continue;
+      }
 
-      // Check walkability using NavGrid if available
+      // GROUND SPAWNING (Citizens, Police, Cars, Tanks, Soldiers)
+      const isVehicle = selectedType === ENEMY_TYPES.TANK || selectedType === ENEMY_TYPES.POLICE_CAR;
       if (this.navGrid) {
         if (!this.navGrid.isWalkable(sx, sy, isVehicle)) {
-          // Nudge to nearest walkable cell
           let found = false;
           const offsets = [8, -8, 16, -16, 24, -24];
           for (let ox of offsets) {
@@ -307,37 +394,133 @@ export class EnemyManager {
             }
             if (found) break;
           }
-          if (!found) continue; // Skip spawn if obstructed
+          if (!found) continue;
         }
       } else {
-        // Fallback check against cityGrid
         const cell = this.cityGrid.getCellAt(sx, sy);
         if (cell && (cell.type === CELL_TYPES.BUILDING || cell.type === CELL_TYPES.BUILDING_DETAIL)) {
           continue;
         }
       }
 
-      this.spawnEnemy(selectedType, sx, sy, angle + Math.PI);
+      // Soldiers spawn in small fireteams of 3-4
+      if (selectedType === ENEMY_TYPES.SOLDIER) {
+        const squadSize = this.prng.rangeInt(3, 4);
+        for (let sq = 0; sq < squadSize; sq++) {
+          if (this.activeCount >= table.maxActiveTotal || this.activeCount >= this.maxEnemies) break;
+          if (this.typeCounts[ENEMY_TYPES.SOLDIER] >= table.typeLimits.SOLDIER) break;
+          const offsetPos = {
+            x: sx + this.prng.range(-12, 12),
+            y: sy + this.prng.range(-12, 12)
+          };
+          if (!this.navGrid || this.navGrid.isWalkable(offsetPos.x, offsetPos.y, false)) {
+            this.spawnEnemy(selectedType, offsetPos.x, offsetPos.y, angle + Math.PI);
+          }
+        }
+      } else {
+        this.spawnEnemy(selectedType, sx, sy, angle + Math.PI);
+      }
     }
   }
 
   /**
+   * Applies damage to an enemy entity.
+   * Airborne enemies (Helis, Drones) can ONLY be damaged if canHitAir is true!
+   * @param {number} idx - Enemy pool index
+   * @param {number} amount - Damage amount
+   * @param {boolean} canHitAir - Whether the weapon can strike aerial targets
+   * @returns {boolean} - True if damage was applied
+   */
+  damageEnemy(idx, amount, canHitAir = false) {
+    if (!this.active[idx]) return false;
+    if (this.isAir[idx] === 1 && !canHitAir) return false;
+
+    this.hp[idx] -= amount;
+
+    if (this.hp[idx] <= 0) {
+      const eType = this.type[idx];
+      const ex = this.x[idx];
+      const ey = this.y[idx];
+
+      if (eType === ENEMY_TYPES.HELICOPTER) {
+        // Helicopter enters spinning crash descent!
+        if (this.state[idx] !== 3) {
+          this.state[idx] = 3; // CRASHING
+          this.timer[idx] = ENEMY_CONFIG.types.HELICOPTER.crashDuration;
+          return true;
+        }
+      } else if (eType === ENEMY_TYPES.DRONE) {
+        // Drone explodes in air
+        this.scene.particleManager.emitDebris(ex, ey, 0xef4444, 5, 40);
+        this.scene.particleManager.emitCollapseFlash(ex, ey, 14);
+        if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killDrone);
+        this.scene.stats.dronesDestroyed++;
+        this.scene.stats.xp += ENEMY_CONFIG.types.DRONE.xp;
+        this.despawnEnemy(idx);
+        return true;
+      } else {
+        // Ground unit destroyed
+        if (eType === ENEMY_TYPES.SOLDIER) {
+          this.scene.particleManager.emitBloodSplatter(ex, ey);
+          if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killSoldier);
+          this.scene.stats.soldiersKilled++;
+          this.scene.stats.xp += ENEMY_CONFIG.types.SOLDIER.xp;
+        } else if (eType === ENEMY_TYPES.TANK) {
+          this.scene.particleManager.emitDebris(ex, ey, 0x3a4a32, 10, 60);
+          this.scene.particleManager.emitCollapseFlash(ex, ey, 18);
+          if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killTank);
+          this.scene.stats.tanksDestroyed++;
+          this.scene.stats.xp += ENEMY_CONFIG.types.TANK.xp;
+        }
+        this.despawnEnemy(idx);
+        return true;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Temporary debug tool (F6 key): kills all air enemies in radius.
+   * Used to test air enemy behaviors until Phase 4 anti-air weapons are implemented.
+   */
+  debugKillNearestAirEnemies(kx, ky, radius = 260) {
+    let killed = 0;
+    const r2 = radius * radius;
+
+    for (let i = 0; i < this.maxEnemies; i++) {
+      if (!this.active[i] || this.isAir[i] === 0) continue;
+      const dx = this.x[i] - kx;
+      const dy = this.y[i] - ky;
+      if (dx * dx + dy * dy <= r2) {
+        this.damageEnemy(i, 999, true);
+        killed++;
+      }
+    }
+    return killed;
+  }
+
+  /**
    * Main per-frame update loop.
-   * Manages AI behaviors, projectile physics, building damage, and batch rendering.
    */
   update(camera, dt, kaiju, particleManager) {
-    // 1. Spawning outside screen ring
+    const updateStartTime = performance.now();
+
+    // 1. Spawning scaled to current Siaga level
     this.updateSpawning(camera, dt);
 
     // 2. Rebuild Spatial Hash Grid
     this.buildSpatialGrid();
 
-    // 3. Camera culling & active radius bounds
+    // 3. Clear transient batch graphics
+    this.airShadowGraphics.clear();
+    this.telegraphGraphics.clear();
+
+    // 4. Viewport & active radius bounds
     const camX = camera.scrollX + camera.width / 2;
     const camY = camera.scrollY + camera.height / 2;
     const { activeUpdateRadius, despawnRadius, cullMargin, types } = ENEMY_CONFIG;
 
-    // Viewport bounds in world coords
     const viewLeft = camera.worldView.x - cullMargin;
     const viewRight = camera.worldView.right + cullMargin;
     const viewTop = camera.worldView.y - cullMargin;
@@ -346,7 +529,7 @@ export class EnemyManager {
     const kx = kaiju.x;
     const ky = kaiju.y;
 
-    // 4. Update Active Enemies
+    // 5. Update Active Enemies
     for (let i = 0; i < this.maxEnemies; i++) {
       if (!this.active[i]) continue;
 
@@ -354,7 +537,6 @@ export class EnemyManager {
       const ey = this.y[i];
       const distToCam = Math.hypot(ex - camX, ey - camY);
 
-      // Despawn if drifted too far
       if (distToCam > despawnRadius) {
         this.despawnEnemy(i);
         continue;
@@ -363,25 +545,21 @@ export class EnemyManager {
       const eType = this.type[i];
       const sprite = this.sprites[i];
 
-      // Only perform full AI if inside activeUpdateRadius
       if (distToCam <= activeUpdateRadius) {
         const dxToKaiju = kx - ex;
         const dyToKaiju = ky - ey;
         const distToKaiju = Math.hypot(dxToKaiju, dyToKaiju);
         const invDist = 1 / Math.max(1, distToKaiju);
 
-        // --- CITIZEN AI (Warga Panik) ---
+        // --- 1. CITIZEN AI ---
         if (eType === ENEMY_TYPES.CITIZEN) {
           const cfg = types.CITIZEN;
           if (distToKaiju < cfg.fleeDistance) {
-            // Panic! Sprint away from Kaiju
-            this.state[i] = 1; // FLEEING
+            this.state[i] = 1;
             let fleeVx = -dxToKaiju * invDist * cfg.speedFleeing;
             let fleeVy = -dyToKaiju * invDist * cfg.speedFleeing;
 
-            // Separation from nearby citizens to avoid clustering
-            let sepX = 0;
-            let sepY = 0;
+            let sepX = 0, sepY = 0;
             this.queryEnemiesInRadius(ex, ey, 14, (nIdx, ndx, ndy, d2) => {
               if (nIdx !== i && d2 > 0.1) {
                 const d = Math.sqrt(d2);
@@ -394,7 +572,6 @@ export class EnemyManager {
             this.vy[i] = fleeVy + sepY;
             this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
           } else {
-            // Casual Wander
             this.state[i] = 0;
             this.timer[i] -= dt;
             if (this.timer[i] <= 0) {
@@ -406,7 +583,6 @@ export class EnemyManager {
             }
           }
 
-          // Wall collision resolution for pedestrians (regular grid)
           if (this.navGrid) {
             const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, false);
             this.x[i] = res.x;
@@ -419,13 +595,10 @@ export class EnemyManager {
           }
         }
 
-        // --- POLICE AI (Polisi - Infantry with Flow Field) ---
+        // --- 2. POLICE AI ---
         else if (eType === ENEMY_TYPES.POLICE) {
           const cfg = types.POLICE;
-
-          // Separation force to form a tactical firing line
-          let sepX = 0;
-          let sepY = 0;
+          let sepX = 0, sepY = 0;
           this.queryEnemiesInRadius(ex, ey, cfg.separationDistance, (nIdx, ndx, ndy, d2) => {
             if (nIdx !== i && d2 > 0.1) {
               const d = Math.sqrt(d2);
@@ -434,46 +607,35 @@ export class EnemyManager {
             }
           });
 
-          // Sample Infantry Flow Field towards Kaiju
           const flow = this.navGrid ? this.navGrid.getInfantryFlow(ex, ey) : { x: 0, y: 0 };
           const flowActive = flow.x !== 0 || flow.y !== 0;
           const flowX = flowActive ? flow.x : (dxToKaiju * invDist);
           const flowY = flowActive ? flow.y : (dyToKaiju * invDist);
 
           if (distToKaiju > cfg.shootRangeMax) {
-            // Advance along flow field towards Kaiju
             this.vx[i] = flowX * cfg.speed + sepX;
             this.vy[i] = flowY * cfg.speed + sepY;
             if (Math.hypot(this.vx[i], this.vy[i]) > 1) {
               this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
             }
           } else if (distToKaiju < cfg.shootRangeMin) {
-            // Kaiju too close! Back away slowly along flow while facing Kaiju
             this.vx[i] = -flowX * (cfg.speed * 0.6) + sepX;
             this.vy[i] = -flowY * (cfg.speed * 0.6) + sepY;
             this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
           } else {
-            // In optimal firing pocket (70-92 px): strafe sideways
             this.vx[i] = -dyToKaiju * invDist * 18 + sepX;
             this.vy[i] = dxToKaiju * invDist * 18 + sepY;
-            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju); // Face Kaiju
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
 
-            // Firing Logic
             this.timer[i] -= dt;
             if (this.timer[i] <= 0) {
               this.timer[i] = this.prng.range(cfg.shootIntervalMin, cfg.shootIntervalMax);
-
-              const aimSpread = this.prng.range(-0.14, 0.14);
-              const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + aimSpread;
-              const bVx = Math.cos(shootAngle) * cfg.bulletSpeed;
-              const bVy = Math.sin(shootAngle) * cfg.bulletSpeed;
-
-              this.spawnBullet(ex, ey, bVx, bVy, cfg.bulletDamage, cfg.bulletLife, false);
+              const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + this.prng.range(-0.14, 0.14);
+              this.spawnBullet(ex, ey, Math.cos(shootAngle) * cfg.bulletSpeed, Math.sin(shootAngle) * cfg.bulletSpeed, cfg.bulletDamage, cfg.bulletLife, false);
               particleManager.emitDebris(ex, ey, 0xfef08a, 1, 20);
             }
           }
 
-          // Wall collision resolution (infantry grid)
           if (this.navGrid) {
             const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, false);
             this.x[i] = res.x;
@@ -486,11 +648,9 @@ export class EnemyManager {
           }
         }
 
-        // --- POLICE CAR AI (Mobil Polisi - Vehicle Flow Field) ---
+        // --- 3. POLICE CAR AI ---
         else if (eType === ENEMY_TYPES.POLICE_CAR) {
           const cfg = types.POLICE_CAR;
-
-          // Sample Vehicle Flow Field (inflated grid keeps cars off walls)
           const flow = this.navGrid ? this.navGrid.getVehicleFlow(ex, ey) : { x: 0, y: 0 };
           const flowActive = flow.x !== 0 || flow.y !== 0;
           const flowX = flowActive ? flow.x : (dxToKaiju * invDist);
@@ -502,14 +662,12 @@ export class EnemyManager {
             this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
           }
 
-          // Siren animation toggle
           this.timer[i] += dt;
           if (this.timer[i] >= cfg.sirenToggleInterval) {
             this.timer[i] = 0;
             this.subType[i] = this.subType[i] === 0 ? 1 : 0;
           }
 
-          // Wall collision resolution (inflated vehicle grid)
           if (this.navGrid) {
             const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, true);
             this.x[i] = res.x;
@@ -521,7 +679,6 @@ export class EnemyManager {
             this.y[i] += this.vy[i] * dt;
           }
 
-          // Check direct ram collision with Kaiju body
           if (distToKaiju < 26 * kaiju.currentScale) {
             kaiju.takeDamage(cfg.ramDamage);
             particleManager.emitDebris(this.x[i], this.y[i], 0x1e3a8a, 8, 65);
@@ -531,13 +688,10 @@ export class EnemyManager {
           }
         }
 
-        // --- TANK AI (Tank Militer - Heavy Vehicle Artillery) ---
+        // --- 4. TANK AI ---
         else if (eType === ENEMY_TYPES.TANK) {
           const cfg = types.TANK;
-
-          // Vehicle separation force so tanks don't stack
-          let sepX = 0;
-          let sepY = 0;
+          let sepX = 0, sepY = 0;
           this.queryEnemiesInRadius(ex, ey, 24, (nIdx, ndx, ndy, d2) => {
             if (nIdx !== i && d2 > 0.1) {
               const d = Math.sqrt(d2);
@@ -546,38 +700,30 @@ export class EnemyManager {
             }
           });
 
-          // Sample Vehicle Flow Field (inflated grid ensures clear street corridors)
           const flow = this.navGrid ? this.navGrid.getVehicleFlow(ex, ey) : { x: 0, y: 0 };
           const flowActive = flow.x !== 0 || flow.y !== 0;
           const flowX = flowActive ? flow.x : (dxToKaiju * invDist);
           const flowY = flowActive ? flow.y : (dyToKaiju * invDist);
 
           if (distToKaiju > cfg.shootRangeMax) {
-            // Advance along streets towards Kaiju
             this.vx[i] = flowX * cfg.speed + sepX;
             this.vy[i] = flowY * cfg.speed + sepY;
             if (Math.hypot(this.vx[i], this.vy[i]) > 1) {
               this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
             }
           } else if (distToKaiju < cfg.shootRangeMin) {
-            // Kaiju approaching! Reverse treads slowly while keeping turret locked on Kaiju
             this.vx[i] = -flowX * (cfg.speed * 0.5) + sepX;
             this.vy[i] = -flowY * (cfg.speed * 0.5) + sepY;
             this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
           } else {
-            // In optimal heavy artillery firing pocket (110-170 px)
-            // Stop chassis and lock turret directly onto Kaiju
             this.vx[i] = sepX * 0.4;
             this.vy[i] = sepY * 0.4;
             this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
 
-            // Artillery Firing Logic
             this.timer[i] -= dt;
             if (this.timer[i] <= 0) {
               this.timer[i] = this.prng.range(cfg.shootIntervalMin, cfg.shootIntervalMax);
-
-              const aimSpread = this.prng.range(-0.06, 0.06);
-              const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + aimSpread;
+              const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + this.prng.range(-0.06, 0.06);
               const sVx = Math.cos(shootAngle) * cfg.shellSpeed;
               const sVy = Math.sin(shootAngle) * cfg.shellSpeed;
               const muzzleX = ex + Math.cos(shootAngle) * 9;
@@ -589,7 +735,6 @@ export class EnemyManager {
             }
           }
 
-          // Wall collision resolution (inflated vehicle grid)
           if (this.navGrid) {
             const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, true);
             this.x[i] = res.x;
@@ -601,9 +746,242 @@ export class EnemyManager {
             this.y[i] += this.vy[i] * dt;
           }
         }
+
+        // --- 5. SOLDIER AI (Infanteri Militer) ---
+        else if (eType === ENEMY_TYPES.SOLDIER) {
+          const cfg = types.SOLDIER;
+          let sepX = 0, sepY = 0;
+          this.queryEnemiesInRadius(ex, ey, cfg.separationDistance, (nIdx, ndx, ndy, d2) => {
+            if (nIdx !== i && d2 > 0.1) {
+              const d = Math.sqrt(d2);
+              sepX -= (ndx / d) * cfg.separationForce;
+              sepY -= (ndy / d) * cfg.separationForce;
+            }
+          });
+
+          // Sample infantry flow field with squad formation offset
+          const flow = this.navGrid
+            ? this.navGrid.getInfantryFlow(ex + this.targetX[i], ey + this.targetY[i])
+            : { x: 0, y: 0 };
+          const flowActive = flow.x !== 0 || flow.y !== 0;
+          const flowX = flowActive ? flow.x : (dxToKaiju * invDist);
+          const flowY = flowActive ? flow.y : (dyToKaiju * invDist);
+
+          if (distToKaiju > cfg.shootRangeMax) {
+            // Advance in formation
+            this.vx[i] = flowX * cfg.speed + sepX;
+            this.vy[i] = flowY * cfg.speed + sepY;
+            if (Math.hypot(this.vx[i], this.vy[i]) > 1) {
+              this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
+            }
+          } else if (distToKaiju < cfg.shootRangeMin) {
+            // Tactical retreat while facing Kaiju
+            this.vx[i] = -flowX * (cfg.speed * 0.5) + sepX;
+            this.vy[i] = -flowY * (cfg.speed * 0.5) + sepY;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+          } else {
+            // Firing pocket (85-110 px): strafe & lock weapon on Kaiju
+            this.vx[i] = -dyToKaiju * invDist * 16 + sepX;
+            this.vy[i] = dxToKaiju * invDist * 16 + sepY;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+
+            // Synchronized Burst Firing Logic
+            if (this.burstCount[i] > 0) {
+              this.burstTimer[i] -= dt;
+              if (this.burstTimer[i] <= 0) {
+                this.burstTimer[i] = cfg.burstInterval;
+                this.burstCount[i]--;
+
+                const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + this.prng.range(-0.10, 0.10);
+                this.spawnBullet(ex, ey, Math.cos(shootAngle) * cfg.bulletSpeed, Math.sin(shootAngle) * cfg.bulletSpeed, cfg.bulletDamage, cfg.bulletLife, false);
+                particleManager.emitDebris(ex, ey, 0xfef08a, 1, 24);
+              }
+            } else {
+              this.timer[i] -= dt;
+              if (this.timer[i] <= 0) {
+                this.timer[i] = this.prng.range(cfg.shootIntervalMin, cfg.shootIntervalMax);
+                this.burstCount[i] = cfg.burstCount;
+                this.burstTimer[i] = 0;
+              }
+            }
+          }
+
+          if (this.navGrid) {
+            const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, false);
+            this.x[i] = res.x;
+            this.y[i] = res.y;
+            this.vx[i] = res.vx;
+            this.vy[i] = res.vy;
+          } else {
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+          }
+        }
+
+        // --- 6. HELICOPTER AI (Attack Helicopter - Aerial Threat) ---
+        else if (eType === ENEMY_TYPES.HELICOPTER) {
+          const cfg = types.HELICOPTER;
+          this.subType[i] = (this.subType[i] + 1) % 2; // Spin rotor blades
+
+          if (this.state[i] === 3) {
+            // STATE: CRASHING (Tailspin into ground)
+            this.rotation[i] += 16 * dt;
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+
+            // Smoke & spark trail
+            particleManager.emitDebris(ex, ey, 0x1f2937, 2, 25);
+            particleManager.emitDebris(ex, ey, 0xf97316, 1, 15);
+
+            this.timer[i] -= dt;
+            if (this.timer[i] <= 0) {
+              // Impact ground explosion!
+              particleManager.emitDebris(ex, ey, 0xf97316, 14, 75);
+              particleManager.emitCollapseFlash(ex, ey, 24);
+              this.scene.cameras.main.shake(160, 0.007);
+
+              // Blast building cells underneath crash
+              this.blastGroundArea(ex, ey, cfg.crashExplosionRadius, cfg.crashBuildingDamage);
+              if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killHelicopter);
+              this.scene.stats.helicoptersDestroyed++;
+              this.scene.stats.xp += cfg.xp;
+              this.despawnEnemy(i);
+              continue;
+            }
+          } else if (this.state[i] === 0) {
+            // STATE: ORBITING KAIJU (100 - 140 px)
+            let tangentX = -dyToKaiju * invDist;
+            let tangentY = dxToKaiju * invDist;
+            let radial = 0;
+            if (distToKaiju > cfg.orbitRadiusMax) radial = 0.55;
+            else if (distToKaiju < cfg.orbitRadiusMin) radial = -0.55;
+
+            this.vx[i] = (tangentX + (dxToKaiju * invDist) * radial) * cfg.speed;
+            this.vy[i] = (tangentY + (dyToKaiju * invDist) * radial) * cfg.speed;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju); // Look towards Kaiju
+
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+
+            this.timer[i] -= dt;
+            if (this.timer[i] <= 0) {
+              this.state[i] = 1; // TELEGRAPH AIMING
+              this.timer[i] = cfg.telegraphDuration;
+            }
+          } else if (this.state[i] === 1) {
+            // STATE: TELEGRAPH (Blinking aiming laser warning)
+            this.vx[i] *= 0.88;
+            this.vy[i] *= 0.88;
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+
+            // Draw telegraph aiming laser
+            this.telegraphGraphics.lineStyle(1.5, 0xef4444, 0.85);
+            this.telegraphGraphics.lineBetween(ex, ey, kx, ky);
+
+            this.timer[i] -= dt;
+            if (this.timer[i] <= 0) {
+              this.state[i] = 2; // FIRING BURST
+              this.burstCount[i] = cfg.burstCount;
+              this.burstTimer[i] = 0;
+              this.timer[i] = this.prng.range(cfg.shootIntervalMin, cfg.shootIntervalMax);
+            }
+          } else if (this.state[i] === 2) {
+            // STATE: BURST FIRING
+            this.vx[i] *= 0.92;
+            this.vy[i] *= 0.92;
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+
+            this.burstTimer[i] -= dt;
+            if (this.burstTimer[i] <= 0 && this.burstCount[i] > 0) {
+              this.burstTimer[i] = cfg.burstInterval;
+              this.burstCount[i]--;
+
+              const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + this.prng.range(-0.05, 0.05);
+              const bVx = Math.cos(shootAngle) * cfg.bulletSpeed;
+              const bVy = Math.sin(shootAngle) * cfg.bulletSpeed;
+              this.spawnBullet(ex, ey, bVx, bVy, cfg.bulletDamage, cfg.bulletLife, false);
+              particleManager.emitDebris(ex, ey, 0xfef08a, 2, 28);
+            }
+
+            if (this.burstCount[i] <= 0) {
+              this.state[i] = 0; // Return to orbit
+            }
+          }
+        }
+
+        // --- 7. DRONE KAMIKAZE AI ---
+        else if (eType === ENEMY_TYPES.DRONE) {
+          const cfg = types.DRONE;
+
+          if (this.state[i] === 0) {
+            // STATE: CRUISE
+            this.vx[i] = dxToKaiju * invDist * cfg.speedCruise;
+            this.vy[i] = dyToKaiju * invDist * cfg.speedCruise;
+            this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
+
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+
+            if (distToKaiju <= cfg.telegraphDistance) {
+              this.state[i] = 1; // TELEGRAPH BLINK
+              this.timer[i] = cfg.telegraphDuration;
+            }
+          } else if (this.state[i] === 1) {
+            // STATE: TELEGRAPH (Fast blinking warning)
+            this.vx[i] *= 0.92;
+            this.vy[i] *= 0.92;
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+
+            // Warning beacon blink
+            this.telegraphGraphics.fillStyle(0xfacc15, 0.9);
+            this.telegraphGraphics.fillCircle(ex, ey, 3);
+
+            this.timer[i] -= dt;
+            if (this.timer[i] <= 0) {
+              this.state[i] = 2; // DIVE BOMB
+              const diveDist = Math.hypot(kx - ex, ky - ey) || 1;
+              this.vx[i] = ((kx - ex) / diveDist) * cfg.speedDive;
+              this.vy[i] = ((ky - ey) / diveDist) * cfg.speedDive;
+              this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
+              this.timer[i] = 0.85; // Max dive lifespan
+            }
+          } else if (this.state[i] === 2) {
+            // STATE: HIGH SPEED DIVE
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+
+            // Direct Kaiju hit
+            if (distToKaiju < 22 * kaiju.currentScale) {
+              kaiju.takeDamage(cfg.explosionKaijuDamage);
+              particleManager.emitDebris(ex, ey, 0xef4444, 9, 60);
+              particleManager.emitCollapseFlash(ex, ey, 18);
+              this.scene.cameras.main.shake(120, 0.006);
+              if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killDrone);
+              this.despawnEnemy(i);
+              continue;
+            }
+
+            this.timer[i] -= dt;
+            if (this.timer[i] <= 0) {
+              // Hit ground
+              particleManager.emitDebris(ex, ey, 0xef4444, 7, 50);
+              particleManager.emitCollapseFlash(ex, ey, 14);
+              this.blastGroundArea(ex, ey, cfg.explosionRadius, cfg.explosionBuildingDamage);
+              if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killDrone);
+              this.despawnEnemy(i);
+              continue;
+            }
+          }
+        }
       }
 
-      // 5. Frustum Culling & Rendering
+      // 6. Frustum Culling & Rendering
       const curX = this.x[i];
       const curY = this.y[i];
       const isVisible =
@@ -617,6 +995,21 @@ export class EnemyManager {
         sprite.setPosition(curX, curY);
         sprite.setRotation(this.rotation[i]);
 
+        // Draw Shadows for Airborne Units
+        if (this.isAir[i] === 1) {
+          sprite.setDepth(28); // Above Kaiju and buildings
+          if (eType === ENEMY_TYPES.HELICOPTER) {
+            // Ground shadow offset by +12 px X, +16 px Y
+            this.airShadowGraphics.fillStyle(0x020617, 0.35);
+            this.airShadowGraphics.fillCircle(curX + 12, curY + 16, 7);
+          } else if (eType === ENEMY_TYPES.DRONE) {
+            this.airShadowGraphics.fillStyle(0x020617, 0.30);
+            this.airShadowGraphics.fillCircle(curX + 6, curY + 8, 3);
+          }
+        } else {
+          sprite.setDepth(12); // Ground layer
+        }
+
         // Texture assignment
         if (eType === ENEMY_TYPES.CITIZEN) {
           sprite.setTexture(`enemy_citizen_${this.subType[i]}`);
@@ -626,6 +1019,12 @@ export class EnemyManager {
           sprite.setTexture(`enemy_police_car_${this.subType[i]}`);
         } else if (eType === ENEMY_TYPES.TANK) {
           sprite.setTexture('enemy_tank');
+        } else if (eType === ENEMY_TYPES.SOLDIER) {
+          sprite.setTexture('enemy_soldier');
+        } else if (eType === ENEMY_TYPES.HELICOPTER) {
+          sprite.setTexture(`enemy_helicopter_${this.subType[i]}`);
+        } else if (eType === ENEMY_TYPES.DRONE) {
+          sprite.setTexture('enemy_drone');
         }
       } else {
         if (sprite.visible) {
@@ -634,8 +1033,37 @@ export class EnemyManager {
       }
     }
 
-    // 6. Update Projectiles (Bullets & Artillery Shells)
+    // 7. Update Projectiles (Bullets & Artillery Shells)
     this.updateBullets(dt, kaiju, particleManager);
+
+    this.lastUpdateTimeMs = performance.now() - updateStartTime;
+  }
+
+  /**
+   * Helper to blast building cells in a world radius during aerial crashes & drone detonations
+   */
+  blastGroundArea(worldX, worldY, radius, damage) {
+    const cg = this.cityGrid;
+    const invCell = 1 / cg.cellSize;
+    const minCol = Math.max(0, Math.floor((worldX - radius) * invCell));
+    const maxCol = Math.min(cg.cols - 1, Math.floor((worldX + radius) * invCell));
+    const minRow = Math.max(0, Math.floor((worldY - radius) * invCell));
+    const maxRow = Math.min(cg.rows - 1, Math.floor((worldY + radius) * invCell));
+    const r2 = radius * radius;
+
+    for (let r = minRow; r <= maxRow; r++) {
+      for (let c = minCol; c <= maxCol; c++) {
+        const cx = c * cg.cellSize + cg.cellSize / 2;
+        const cy = r * cg.cellSize + cg.cellSize / 2;
+        const distSq = (cx - worldX) * (cx - worldX) + (cy - worldY) * (cy - worldY);
+        if (distSq <= r2) {
+          const res = cg.damageCell(c, r, damage);
+          if (res && res.destroyed && this.scene && this.scene.onCellDestroyed) {
+            this.scene.onCellDestroyed({ col: c, row: r, worldX: cx, worldY: cy }, res.building, false);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -658,7 +1086,6 @@ export class EnemyManager {
         continue;
       }
 
-      // Integrate
       this.bulletX[i] += this.bulletVx[i] * dt;
       this.bulletY[i] += this.bulletVy[i] * dt;
 
@@ -683,7 +1110,7 @@ export class EnemyManager {
         continue;
       }
 
-      // B. Collision with Buildings (Bullets and shells damage city structures)
+      // B. Collision with Buildings
       const cell = this.cityGrid.getCellAt(bx, by);
       if (cell && (cell.type === CELL_TYPES.BUILDING || cell.type === CELL_TYPES.BUILDING_DETAIL)) {
         const bDmg = isShell ? shellBuildingDamage : bulletBuildingDamage;
@@ -703,13 +1130,11 @@ export class EnemyManager {
 
       // C. Render Tracers
       if (isShell) {
-        // Heavy 4x4 Artillery Shell (Fiery orange shell with glowing white core)
         this.bulletGraphics.fillStyle(0xea580c, 0.95);
         this.bulletGraphics.fillRect(bx - 2, by - 2, 4, 4);
         this.bulletGraphics.fillStyle(0xffffff, 1.0);
         this.bulletGraphics.fillRect(bx - 1, by - 1, 2, 2);
       } else {
-        // Standard 2x2 Police Bullet (Golden yellow tracer with white core)
         this.bulletGraphics.fillStyle(0xfde047, 0.9);
         this.bulletGraphics.fillRect(bx - 1, by - 1, 2, 2);
         this.bulletGraphics.fillStyle(0xffffff, 1.0);
@@ -720,11 +1145,7 @@ export class EnemyManager {
 
   /**
    * Checks for Kaiju body and tail trample crushing active enemies.
-   * Trampled enemies die with blood splatters or vehicle debris bursts.
-   * @param {Object} bodyFoot - { cx, cy, rx, ry, angle }
-   * @param {Array<Object>} tailFoots - [{ cx, cy, radius }]
-   * @param {Object} particleManager 
-   * @param {Function} onKill - (enemyType, xp) => void
+   * Airborne enemies (Helicopters & Drones) are completely immune to ground stomps!
    */
   checkKaijuTrample(bodyFoot, tailFoots, particleManager, onKill) {
     const cos = Math.cos(-bodyFoot.angle);
@@ -734,9 +1155,9 @@ export class EnemyManager {
 
     const queryRadius = Math.max(bodyFoot.rx, bodyFoot.ry) + 30;
 
-    // Query spatial grid around Kaiju torso
     this.queryEnemiesInRadius(bodyFoot.cx, bodyFoot.cy, queryRadius, (i, dx, dy) => {
       if (!this.active[i]) return;
+      if (this.isAir[i] === 1) return; // Airborne units cannot be trampled!
 
       const ex = this.x[i];
       const ey = this.y[i];
@@ -759,7 +1180,6 @@ export class EnemyManager {
         }
       }
 
-      // If crushed!
       if (hit) {
         const eType = this.type[i];
         let xpGained = 10;
@@ -779,6 +1199,9 @@ export class EnemyManager {
           particleManager.emitDebris(ex, ey, 0xf97316, 6, 50);
           particleManager.emitCollapseFlash(ex, ey, 18);
           xpGained = ENEMY_CONFIG.types.TANK.xp;
+        } else if (eType === ENEMY_TYPES.SOLDIER) {
+          particleManager.emitBloodSplatter(ex, ey);
+          xpGained = ENEMY_CONFIG.types.SOLDIER.xp;
         }
 
         this.despawnEnemy(i);
@@ -790,11 +1213,12 @@ export class EnemyManager {
   }
 
   /**
-   * Cleanly resets all enemies and projectiles for a new game or restart
+   * Cleanly resets all enemies and projectiles for a new run
    */
   reset() {
     for (let i = 0; i < this.maxEnemies; i++) {
       this.active[i] = 0;
+      this.isAir[i] = 0;
       this.sprites[i].setVisible(false);
       this.sprites[i].setActive(false);
     }
@@ -803,6 +1227,7 @@ export class EnemyManager {
       this.freeIndices.push(i);
     }
     this.activeCount = 0;
+    this.typeCounts.fill(0);
 
     for (let i = 0; i < this.maxBullets; i++) {
       this.bulletActive[i] = 0;
@@ -814,6 +1239,8 @@ export class EnemyManager {
     this.activeBulletCount = 0;
 
     this.bulletGraphics.clear();
+    this.airShadowGraphics.clear();
+    this.telegraphGraphics.clear();
     this.gridHead.fill(-1);
     this.spawnTimer = 0;
   }
@@ -827,5 +1254,7 @@ export class EnemyManager {
       if (this.sprites[i]) this.sprites[i].destroy();
     }
     if (this.bulletGraphics) this.bulletGraphics.destroy();
+    if (this.airShadowGraphics) this.airShadowGraphics.destroy();
+    if (this.telegraphGraphics) this.telegraphGraphics.destroy();
   }
 }

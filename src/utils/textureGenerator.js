@@ -531,6 +531,150 @@ export class TextureGenerator {
 
       canvas.refresh();
     }
+
+    // 5. Military Soldier (4x5 px, Olive Drab & Combat Helmet)
+    if (!scene.textures.exists('enemy_soldier')) {
+      const canvas = scene.textures.createCanvas('enemy_soldier', 4, 5);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Dark Military Helmet
+      ctx.fillStyle = '#283322';
+      ctx.fillRect(1, 0, 2, 1);
+      ctx.fillStyle = '#1f271a';
+      ctx.fillRect(1, 0, 1, 1);
+
+      // Face
+      ctx.fillStyle = PALETTE.pedestrianSkinHex;
+      ctx.fillRect(1, 1, 2, 1);
+
+      // Camouflage Fatigue Uniform
+      ctx.fillStyle = '#3f4a36';
+      ctx.fillRect(0, 2, 4, 2);
+      ctx.fillStyle = '#4d5b42';
+      ctx.fillRect(1, 2, 2, 1);
+
+      // Assault Rifle barrel pointing Right
+      ctx.fillStyle = '#18181b';
+      ctx.fillRect(3, 2, 1, 1);
+
+      // Combat Boots
+      ctx.fillStyle = '#141a12';
+      ctx.fillRect(0, 4, 1, 1);
+      ctx.fillRect(2, 4, 1, 1);
+
+      canvas.refresh();
+    }
+
+    // 6. Attack Helicopter (16x16 px, 2 Frames for spinning 4-blade rotor)
+    for (let f = 0; f < 2; f++) {
+      const key = `enemy_helicopter_${f}`;
+      if (!scene.textures.exists(key)) {
+        const canvas = scene.textures.createCanvas(key, 16, 16);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        // Tail boom & tail rotor
+        ctx.fillStyle = '#273022';
+        ctx.fillRect(1, 7, 4, 2);
+        ctx.fillStyle = '#18181b';
+        ctx.fillRect(0, 5, 2, 6); // Tail rotor
+
+        // Weapon pods on sides
+        ctx.fillStyle = '#18181b';
+        ctx.fillRect(6, 4, 3, 1);
+        ctx.fillRect(6, 11, 3, 1);
+
+        // Main fuselage
+        ctx.fillStyle = '#384330';
+        ctx.fillRect(4, 5, 8, 6);
+        ctx.fillStyle = '#46533c';
+        ctx.fillRect(5, 6, 6, 4);
+
+        // Cockpit canopy windshield (Facing Right / East)
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(10, 6, 3, 4);
+        ctx.fillStyle = '#bae6fd';
+        ctx.fillRect(11, 7, 2, 2);
+
+        // Spinning 4-Blade Rotor
+        ctx.fillStyle = '#0f172a';
+        if (f === 0) {
+          // Horizontal & Vertical cross blades (+)
+          ctx.fillRect(1, 7, 14, 2);
+          ctx.fillRect(7, 1, 2, 14);
+        } else {
+          // Diagonal cross blades (X)
+          for (let d = 2; d <= 13; d++) {
+            ctx.fillRect(d, d, 2, 2);
+            ctx.fillRect(d, 15 - d, 2, 2);
+          }
+        }
+
+        // Rotor Mast Hub
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(7, 7, 2, 2);
+
+        canvas.refresh();
+      }
+    }
+
+    // Helicopter Ground Shadow (16x16 px)
+    if (!scene.textures.exists('enemy_helicopter_shadow')) {
+      const canvas = scene.textures.createCanvas('enemy_helicopter_shadow', 16, 16);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Rotor blur disk shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+      ctx.beginPath();
+      ctx.arc(8, 8, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Fuselage silhouette
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(4, 6, 8, 4);
+      ctx.fillRect(1, 7, 4, 2);
+      canvas.refresh();
+    }
+
+    // 7. Kamikaze Drone (6x6 px)
+    if (!scene.textures.exists('enemy_drone')) {
+      const canvas = scene.textures.createCanvas('enemy_drone', 6, 6);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Motor arms at corners
+      ctx.fillStyle = '#18181b';
+      ctx.fillRect(0, 0, 1, 1);
+      ctx.fillRect(5, 0, 1, 1);
+      ctx.fillRect(0, 5, 1, 1);
+      ctx.fillRect(5, 5, 1, 1);
+
+      // Crimson fuselage
+      ctx.fillStyle = '#dc2626';
+      ctx.fillRect(1, 1, 4, 4);
+
+      // Warning targeter core (glowing yellow/white)
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(2, 2, 2, 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(2, 2, 1, 1);
+
+      canvas.refresh();
+    }
+
+    // Drone Ground Shadow (6x6 px)
+    if (!scene.textures.exists('enemy_drone_shadow')) {
+      const canvas = scene.textures.createCanvas('enemy_drone_shadow', 6, 6);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.beginPath();
+      ctx.arc(3, 3, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      canvas.refresh();
+    }
   }
 
   /**
