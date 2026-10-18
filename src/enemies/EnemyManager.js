@@ -1,5 +1,6 @@
 import { ENEMY_CONFIG } from '../config/enemies.js';
 import { ALERT_CONFIG } from '../config/alert.js';
+import { XP_CONFIG } from '../config/xp.js';
 import { CELL_TYPES } from '../world/CityGrid.js';
 import { PRNG } from '../utils/prng.js';
 
@@ -456,6 +457,7 @@ export class EnemyManager {
         if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killDrone);
         this.scene.stats.dronesDestroyed++;
         this.scene.stats.xp += ENEMY_CONFIG.types.DRONE.xp;
+        if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.DRONE);
         this.despawnEnemy(idx);
         return true;
       } else {
@@ -465,12 +467,33 @@ export class EnemyManager {
           if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killSoldier);
           this.scene.stats.soldiersKilled++;
           this.scene.stats.xp += ENEMY_CONFIG.types.SOLDIER.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.SOLDIER);
         } else if (eType === ENEMY_TYPES.TANK) {
           this.scene.particleManager.emitDebris(ex, ey, 0x3a4a32, 10, 60);
           this.scene.particleManager.emitCollapseFlash(ex, ey, 18);
           if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killTank);
           this.scene.stats.tanksDestroyed++;
           this.scene.stats.xp += ENEMY_CONFIG.types.TANK.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.TANK);
+        } else if (eType === ENEMY_TYPES.POLICE) {
+          this.scene.particleManager.emitBloodSplatter(ex, ey);
+          if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killPolice);
+          this.scene.stats.policeKilled++;
+          this.scene.stats.xp += ENEMY_CONFIG.types.POLICE.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.POLICE);
+        } else if (eType === ENEMY_TYPES.CITIZEN) {
+          this.scene.particleManager.emitBloodSplatter(ex, ey);
+          if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killCivilian);
+          this.scene.stats.humansKilled++;
+          this.scene.stats.xp += ENEMY_CONFIG.types.CITIZEN.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.CITIZEN);
+        } else if (eType === ENEMY_TYPES.POLICE_CAR) {
+          this.scene.particleManager.emitDebris(ex, ey, 0x1e3a8a, 8, 65);
+          this.scene.particleManager.emitCollapseFlash(ex, ey, 14);
+          if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killPolice);
+          this.scene.stats.carsDestroyed++;
+          this.scene.stats.xp += ENEMY_CONFIG.types.POLICE_CAR.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.POLICE_CAR);
         }
         this.despawnEnemy(idx);
         return true;
@@ -845,6 +868,7 @@ export class EnemyManager {
               if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killHelicopter);
               this.scene.stats.helicoptersDestroyed++;
               this.scene.stats.xp += cfg.xp;
+              if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.HELICOPTER);
               this.despawnEnemy(i);
               continue;
             }
@@ -1159,6 +1183,10 @@ export class EnemyManager {
       if (!this.active[i]) return;
       if (this.isAir[i] === 1) return; // Airborne units cannot be trampled!
 
+      const eType = this.type[i];
+      // Tanks and Soldiers are too sturdy for trampling - must be destroyed with weapons!
+      if (eType === ENEMY_TYPES.TANK || eType === ENEMY_TYPES.SOLDIER) return;
+
       const ex = this.x[i];
       const ey = this.y[i];
 
@@ -1181,27 +1209,21 @@ export class EnemyManager {
       }
 
       if (hit) {
-        const eType = this.type[i];
         let xpGained = 10;
 
         if (eType === ENEMY_TYPES.CITIZEN) {
           particleManager.emitBloodSplatter(ex, ey);
           xpGained = ENEMY_CONFIG.types.CITIZEN.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.CITIZEN);
         } else if (eType === ENEMY_TYPES.POLICE) {
           particleManager.emitBloodSplatter(ex, ey);
           xpGained = ENEMY_CONFIG.types.POLICE.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.POLICE);
         } else if (eType === ENEMY_TYPES.POLICE_CAR) {
           particleManager.emitDebris(ex, ey, 0x1e3a8a, 8, 65);
           particleManager.emitCollapseFlash(ex, ey, 14);
           xpGained = ENEMY_CONFIG.types.POLICE_CAR.xp;
-        } else if (eType === ENEMY_TYPES.TANK) {
-          particleManager.emitDebris(ex, ey, 0x3a4a32, 12, 70);
-          particleManager.emitDebris(ex, ey, 0xf97316, 6, 50);
-          particleManager.emitCollapseFlash(ex, ey, 18);
-          xpGained = ENEMY_CONFIG.types.TANK.xp;
-        } else if (eType === ENEMY_TYPES.SOLDIER) {
-          particleManager.emitBloodSplatter(ex, ey);
-          xpGained = ENEMY_CONFIG.types.SOLDIER.xp;
+          if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.POLICE_CAR);
         }
 
         this.despawnEnemy(i);

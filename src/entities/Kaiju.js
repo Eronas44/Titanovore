@@ -56,6 +56,7 @@ export class Kaiju {
     // HP, Invulnerability & Death (Tahap 3A)
     this.maxHp = this.config.maxHp || 300;
     this.hp = this.maxHp;
+    this.speedMultiplier = 1.0;
     this.invincibleTimer = 0;
     this.flashTimer = 0;
     this.isDead = false;
@@ -265,6 +266,10 @@ export class Kaiju {
     this.flashTimer = this.config.flashDuration || 0.08; // 80ms
     this.applyHitFlash(true);
 
+    if (this.scene && this.scene.weaponSystem) {
+      this.scene.weaponSystem.triggerThornBurst();
+    }
+
     return true;
   }
 
@@ -336,10 +341,10 @@ export class Kaiju {
       this.isMoving = Math.hypot(this.vx, this.vy) > 2;
     }
 
-    // Calculate effective max speed with trampling slowdown penalty
+    // Calculate effective max speed with trampling slowdown penalty and speedMultiplier
     const maxPenalty = GAME_CONFIG.destruction.maxSlowdownPercent || 0.25;
     const currentPenalty = Math.min(maxPenalty, this.slowdownFactor);
-    const effectiveMaxSpeed = maxSpeed * (1 - currentPenalty);
+    const effectiveMaxSpeed = maxSpeed * (this.speedMultiplier || 1.0) * (1 - currentPenalty);
 
     // Slowly recover slowdown over time
     const recovery = GAME_CONFIG.destruction.slowdownRecoveryRate || 1.8;

@@ -18,6 +18,7 @@ export class TextureGenerator {
     this.createCarTextures(scene);
     this.createEnemyTextures(scene);
     this.createParticleTextures(scene);
+    this.createCardAndWeaponTextures(scene);
   }
 
   /**
@@ -689,4 +690,286 @@ export class TextureGenerator {
       canvas.refresh();
     }
   }
+
+  /**
+   * Generates 16x16 pixel art icons for cards/weapons and XP crystals
+   */
+  static createCardAndWeaponTextures(scene) {
+    // 1. Small XP Crystal (5x5 px diamond)
+    if (!scene.textures.exists('xp_crystal_small')) {
+      const canvas = scene.textures.createCanvas('xp_crystal_small', 5, 5);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      ctx.fillStyle = '#0891b2'; // Cyan border
+      ctx.fillRect(2, 0, 1, 1);
+      ctx.fillRect(1, 1, 3, 3);
+      ctx.fillRect(2, 4, 1, 1);
+
+      ctx.fillStyle = '#22d3ee'; // Bright cyan body
+      ctx.fillRect(2, 1, 1, 3);
+      ctx.fillRect(1, 2, 3, 1);
+
+      ctx.fillStyle = '#ffffff'; // White glint
+      ctx.fillRect(2, 2, 1, 1);
+      canvas.refresh();
+    }
+
+    // 2. Large XP Crystal (7x7 px diamond)
+    if (!scene.textures.exists('xp_crystal_large')) {
+      const canvas = scene.textures.createCanvas('xp_crystal_large', 7, 7);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      ctx.fillStyle = '#047857'; // Emerald border
+      ctx.fillRect(3, 0, 1, 1);
+      ctx.fillRect(2, 1, 3, 5);
+      ctx.fillRect(1, 2, 5, 3);
+      ctx.fillRect(3, 6, 1, 1);
+
+      ctx.fillStyle = '#10b981'; // Bright emerald body
+      ctx.fillRect(2, 2, 3, 3);
+      ctx.fillRect(3, 1, 1, 5);
+      ctx.fillRect(1, 3, 5, 1);
+
+      ctx.fillStyle = '#a7f3d0'; // Highlight
+      ctx.fillRect(3, 2, 2, 2);
+
+      ctx.fillStyle = '#ffffff'; // White glint
+      ctx.fillRect(3, 3, 1, 1);
+      canvas.refresh();
+    }
+
+    // Helper to generate a 16x16 icon canvas
+    const createIcon = (key, drawFn) => {
+      if (!scene.textures.exists(key)) {
+        const canvas = scene.textures.createCanvas(key, 16, 16);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        // Dark background base
+        ctx.fillStyle = '#111019';
+        ctx.fillRect(0, 0, 16, 16);
+        drawFn(ctx);
+        canvas.refresh();
+      }
+    };
+
+    // 3. Icon Cakar (Triple golden claw scratches)
+    createIcon('icon_claw', (ctx) => {
+      ctx.fillStyle = '#f59e0b'; // Gold
+      // 3 claw slashes
+      ctx.fillRect(3, 4, 2, 3);
+      ctx.fillRect(4, 6, 2, 4);
+      ctx.fillRect(5, 9, 2, 4);
+
+      ctx.fillRect(7, 2, 2, 4);
+      ctx.fillRect(8, 5, 2, 4);
+      ctx.fillRect(9, 8, 2, 5);
+
+      ctx.fillRect(11, 4, 2, 4);
+      ctx.fillRect(12, 7, 2, 4);
+      ctx.fillRect(13, 10, 2, 3);
+
+      // Highlights
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(4, 4, 1, 2);
+      ctx.fillRect(8, 2, 1, 2);
+      ctx.fillRect(12, 4, 1, 2);
+    });
+
+    // 4. Icon Meriam Punggung (Twin cannon barrels)
+    createIcon('icon_cannon', (ctx) => {
+      // Gun base mount
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(2, 4, 5, 8);
+      // Twin Barrels
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(7, 5, 6, 2);
+      ctx.fillRect(7, 9, 6, 2);
+      // Steel highlights
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(7, 5, 5, 1);
+      ctx.fillRect(7, 9, 5, 1);
+      // Muzzle flash sparks
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(13, 4, 2, 4);
+      ctx.fillRect(13, 8, 2, 4);
+      ctx.fillStyle = '#fde047';
+      ctx.fillRect(14, 5, 1, 2);
+      ctx.fillRect(14, 9, 1, 2);
+    });
+
+    // 5. Icon Kulit Listrik (Cyan/Yellow Lightning Zap)
+    createIcon('icon_electric', (ctx) => {
+      ctx.fillStyle = '#38bdf8'; // Blue aura glow
+      ctx.fillRect(8, 1, 4, 4);
+      ctx.fillRect(6, 4, 5, 4);
+      ctx.fillRect(4, 7, 6, 4);
+      ctx.fillRect(7, 10, 4, 5);
+
+      ctx.fillStyle = '#facc15'; // Bright yellow bolt
+      ctx.fillRect(9, 2, 2, 3);
+      ctx.fillRect(7, 5, 3, 3);
+      ctx.fillRect(5, 8, 4, 3);
+      ctx.fillRect(8, 11, 2, 3);
+
+      ctx.fillStyle = '#ffffff'; // White core
+      ctx.fillRect(8, 6, 1, 2);
+      ctx.fillRect(6, 9, 1, 2);
+    });
+
+    // 6. Icon Kulit Baja (Steel Plate Shield)
+    createIcon('icon_iron_skin', (ctx) => {
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(3, 2, 10, 8);
+      ctx.fillRect(4, 10, 8, 3);
+      ctx.fillRect(5, 13, 6, 2);
+      ctx.fillRect(7, 15, 2, 1);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(4, 3, 8, 6);
+      ctx.fillRect(5, 9, 6, 3);
+
+      // Steel cross reflection
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(7, 4, 2, 8);
+      ctx.fillRect(5, 6, 6, 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(7, 6, 2, 2);
+    });
+
+    // 7. Icon Regenerasi (Green Medical Cross)
+    createIcon('icon_regen', (ctx) => {
+      ctx.fillStyle = '#15803d';
+      ctx.fillRect(6, 2, 4, 12);
+      ctx.fillRect(2, 6, 12, 4);
+
+      ctx.fillStyle = '#22c55e';
+      ctx.fillRect(7, 3, 2, 10);
+      ctx.fillRect(3, 7, 10, 2);
+
+      ctx.fillStyle = '#bbf7d0';
+      ctx.fillRect(7, 7, 2, 2);
+    });
+
+    // 8. Icon Magnet XP (Horseshoe Magnet)
+    createIcon('icon_magnet', (ctx) => {
+      // Red north pole
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(3, 2, 3, 8);
+      ctx.fillRect(3, 10, 10, 3);
+      // Blue south pole
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(10, 2, 3, 8);
+      // Silver tips
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(3, 2, 3, 2);
+      ctx.fillRect(10, 2, 3, 2);
+      // Energy spark in center
+      ctx.fillStyle = '#06b6d4';
+      ctx.fillRect(7, 5, 2, 2);
+    });
+
+    // 9. Icon Kaki Perkasa (Winged Speed Boot)
+    createIcon('icon_swift', (ctx) => {
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(3, 5, 6, 7);
+      ctx.fillRect(3, 9, 10, 4);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(4, 6, 4, 5);
+      ctx.fillRect(4, 10, 8, 2);
+
+      // Speed feathers
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(1, 3, 4, 2);
+      ctx.fillRect(2, 5, 3, 2);
+    });
+
+    // 10. Icon Tubuh Raksasa (Titan Footprint)
+    createIcon('icon_colossus', (ctx) => {
+      ctx.fillStyle = '#065f46';
+      ctx.fillRect(4, 6, 8, 8);
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(5, 7, 6, 6);
+      // 3 Claws
+      ctx.fillStyle = '#34d399';
+      ctx.fillRect(3, 2, 2, 3);
+      ctx.fillRect(7, 1, 2, 4);
+      ctx.fillRect(11, 2, 2, 3);
+    });
+
+    // 11. Icon Pembunuh (Crossed Blades with Blood)
+    createIcon('icon_carnage', (ctx) => {
+      ctx.fillStyle = '#94a3b8';
+      // Diagonal blade 1
+      for (let i = 0; i < 10; i++) {
+        ctx.fillRect(3 + i, 3 + i, 2, 2);
+      }
+      // Diagonal blade 2
+      for (let i = 0; i < 10; i++) {
+        ctx.fillRect(12 - i, 3 + i, 2, 2);
+      }
+      // Blood drops
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(8, 2, 2, 3);
+      ctx.fillRect(12, 12, 2, 2);
+      ctx.fillRect(2, 12, 2, 2);
+    });
+
+    // 12. Icon Cepat Tembak (Stopwatch with Speed Streaks)
+    createIcon('icon_rapid', (ctx) => {
+      ctx.fillStyle = '#d97706';
+      ctx.beginPath();
+      ctx.arc(8, 9, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(8, 9, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(7, 2, 2, 2); // Button
+      ctx.fillRect(8, 7, 1, 3); // Hand
+      ctx.fillRect(8, 9, 3, 1);
+
+      // Speed streaks
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(1, 4, 3, 1);
+      ctx.fillRect(1, 8, 2, 1);
+    });
+
+    // 13. Icon Penghancur Kota (Collapsing Skyscraper)
+    createIcon('icon_demolisher', (ctx) => {
+      ctx.fillStyle = '#ea580c';
+      ctx.fillRect(4, 4, 8, 11);
+      ctx.fillStyle = '#fb923c';
+      ctx.fillRect(5, 5, 6, 9);
+      // Windows
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(6, 6, 1, 2);
+      ctx.fillRect(8, 6, 1, 2);
+      ctx.fillRect(6, 10, 1, 2);
+      ctx.fillRect(8, 10, 1, 2);
+      // Fracture crack
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(5, 8, 6, 1);
+    });
+
+    // 14. Icon Sisik Duri (Spike Shell)
+    createIcon('icon_thorns', (ctx) => {
+      ctx.fillStyle = '#9d174d';
+      ctx.fillRect(4, 4, 8, 8);
+      ctx.fillStyle = '#f43f5e';
+      ctx.fillRect(5, 5, 6, 6);
+      // 4 Spikes
+      ctx.fillStyle = '#fbcfe8';
+      ctx.fillRect(7, 1, 2, 3);
+      ctx.fillRect(7, 12, 2, 3);
+      ctx.fillRect(1, 7, 3, 2);
+      ctx.fillRect(12, 7, 3, 2);
+    });
+  }
 }
+

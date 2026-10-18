@@ -309,7 +309,7 @@ export class Crowd {
         p.isDead = true;
         p.sprite.setVisible(false);
         particleManager.emitBloodSplatter(p.x, p.y);
-        if (onHumanKilled) onHumanKilled();
+        if (onHumanKilled) onHumanKilled(p.x, p.y);
       }
     }
 
@@ -329,7 +329,7 @@ export class Crowd {
         car.sprite.setScale(0.85, 0.45); // Flattened
         particleManager.emitDust(car.x, car.y, 4, 0.8);
         particleManager.emitDebris(car.x, car.y, 0xef4444, 4, 50);
-        if (onCarDestroyed) onCarDestroyed();
+        if (onCarDestroyed) onCarDestroyed(car.x, car.y);
       }
     }
   }
@@ -350,7 +350,7 @@ export class Crowd {
         p.isDead = true;
         p.sprite.setVisible(false);
         particleManager.emitBloodSplatter(p.x, p.y);
-        if (onHumanKilled) onHumanKilled();
+        if (onHumanKilled) onHumanKilled(p.x, p.y);
       }
     }
 
@@ -365,7 +365,7 @@ export class Crowd {
         car.sprite.setTint(0x282530);
         car.sprite.setScale(0.85, 0.45);
         particleManager.emitDust(car.x, car.y, 3, 0.7);
-        if (onCarDestroyed) onCarDestroyed();
+        if (onCarDestroyed) onCarDestroyed(car.x, car.y);
       }
     }
   }

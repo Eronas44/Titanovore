@@ -13,6 +13,12 @@ import { NavGrid } from '../world/NavGrid.js';
 import { ENEMY_CONFIG } from '../config/enemies.js';
 import { AlertSystem } from '../systems/AlertSystem.js';
 import { ALERT_CONFIG } from '../config/alert.js';
+import { XpSystem } from '../systems/XpSystem.js';
+import { XP_CONFIG } from '../config/xp.js';
+import { WeaponSystem } from '../weapons/WeaponSystem.js';
+import { WEAPON_CONFIG } from '../config/weapons.js';
+import { CardSystem } from '../cards/CardSystem.js';
+import { CARD_CONFIG } from '../config/cards.js';
 
 /**
  * GameScene - Tahap 3B
@@ -80,6 +86,30 @@ export class GameScene extends Phaser.Scene {
 
     // 8b. Spawn Ambient Crowd (Ambient vehicles & decorative pedestrians)
     this.crowd = new Crowd(this, this.cityData);
+
+    // 8c. Initialize XP & Progression System (Tahap 4A)
+    this.xpSystem = new XpSystem(this, (newLevel) => {
+      if (this.cardSystem) {
+        this.cardSystem.queueLevelUp(newLevel);
+      }
+    });
+
+    // 8d. Initialize Automatic Weapon System (Tahap 4A)
+    this.weaponSystem = new WeaponSystem(
+      this,
+      this.kaiju,
+      this.enemyManager,
+      this.cityGrid,
+      this.particleManager
+    );
+
+    // 8e. Initialize Rogue-lite Card Selection System (Tahap 4A)
+    this.cardSystem = new CardSystem(
+      this,
+      this.kaiju,
+      this.weaponSystem,
+      this.xpSystem
+    );
 
     // 9. Camera Setup
     this.setupCamera();
@@ -154,6 +184,9 @@ export class GameScene extends Phaser.Scene {
 
     zones.forEach(z => {
       this.input.keyboard.on(`keydown-${z.key}`, () => {
+        // Disable district teleport when selecting cards
+        if (this.cardSystem && this.cardSystem.isModalOpen) return;
+
         this.kaiju.x = z.x;
         this.kaiju.y = z.y;
         this.kaiju.vx = 0;
@@ -204,6 +237,22 @@ export class GameScene extends Phaser.Scene {
         this.alertSystem.setAlert(this.alertSystem.alert - 15);
       }
     });
+
+    // 8. [X] Key: (Temporary Debug) Instant Level Up (Presents Card Selection)
+    this.input.keyboard.on('keydown-X', (event) => {
+      event.preventDefault();
+      if (this.cardSystem && this.xpSystem) {
+        this.cardSystem.queueLevelUp(this.xpSystem.level + 1);
+      }
+    });
+
+    // 9. [C] Key: (Temporary Debug) +500 XP
+    this.input.keyboard.on('keydown-C', (event) => {
+      event.preventDefault();
+      if (this.xpSystem) {
+        this.xpSystem.addDirectXp(500);
+      }
+    });
   }
 
   /**
@@ -227,7 +276,9 @@ export class GameScene extends Phaser.Scene {
     const spawnX = WORLD_CONFIG.worldWidth / 2;
     const spawnY = WORLD_CONFIG.worldHeight / 2;
     this.kaiju.isDead = false;
+    this.kaiju.maxHp = GAME_CONFIG.kaiju.maxHp;
     this.kaiju.hp = this.kaiju.maxHp;
+    this.kaiju.speedMultiplier = 1.0;
     this.kaiju.container.setVisible(true);
     if (this.kaiju.leftFoot) this.kaiju.leftFoot.setVisible(true);
     if (this.kaiju.rightFoot) this.kaiju.rightFoot.setVisible(true);
@@ -238,7 +289,7 @@ export class GameScene extends Phaser.Scene {
     this.kaiju.setKaijuScale(1.0);
     this.cameras.main.setZoom(GAME_CONFIG.camera.initialZoom);
 
-    // 3. Reset RunState: Siaga resets to 0 (Level 1), active enemies clear & spawn table resets
+    // 3. Reset RunState: Siaga, Enemies, XP, Weapons, and Cards reset!
     if (this.alertSystem) {
       this.alertSystem.reset();
     }
@@ -248,6 +299,16 @@ export class GameScene extends Phaser.Scene {
     if (this.crowd) {
       this.crowd.reset();
     }
+    if (this.xpSystem) {
+      this.xpSystem.reset();
+    }
+    if (this.weaponSystem) {
+      this.weaponSystem.reset();
+    }
+    if (this.cardSystem) {
+      this.cardSystem.reset();
+    }
+    this.isCardSelecting = false;
 
     // 4. Reset Run Telemetry (City destruction stats remain accumulated)
     this.stats.survivalTime = 0;
@@ -286,11 +347,26 @@ export class GameScene extends Phaser.Scene {
       this.enemyManager.alertSystem = this.alertSystem;
       this.enemyManager.reset();
     }
-    this.crowd.reset();
+    if (this.crowd) {
+      this.crowd.reset();
+    }
+    if (this.xpSystem) {
+      this.xpSystem.reset();
+    }
+    if (this.weaponSystem) {
+      this.weaponSystem.reset();
+    }
+    if (this.cardSystem) {
+      this.cardSystem.reset();
+    }
+    this.isCardSelecting = false;
 
     const spawnX = WORLD_CONFIG.worldWidth / 2;
     const spawnY = WORLD_CONFIG.worldHeight / 2;
     this.kaiju.resetPosition(spawnX, spawnY);
+    this.kaiju.maxHp = GAME_CONFIG.kaiju.maxHp;
+    this.kaiju.hp = this.kaiju.maxHp;
+    this.kaiju.speedMultiplier = 1.0;
     this.kaiju.setKaijuScale(1.0);
     this.cameras.main.setZoom(GAME_CONFIG.camera.initialZoom);
 
@@ -329,11 +405,27 @@ export class GameScene extends Phaser.Scene {
     // Telemetry text
     this.hudText = this.add.text(6, 4, '', {
       fontFamily: 'monospace',
-      fontSize: '8px',
+      fontSize: '7.5px',
       color: PALETTE.uiTextHex,
       lineSpacing: 2
     });
     this.hudContainer.add(this.hudText);
+
+    // Bottom Screen XP Bar Container (Tahap 4A)
+    this.hudXpContainer = this.add.container(0, 0);
+    this.hudXpContainer.setScrollFactor(0);
+    this.hudXpContainer.setDepth(102);
+
+    this.hudXpGraphics = this.add.graphics();
+    this.hudXpContainer.add(this.hudXpGraphics);
+
+    this.hudXpText = this.add.text(GAME_CONFIG.width / 2, GAME_CONFIG.height - 11, '', {
+      fontFamily: 'monospace',
+      fontSize: '6.5px',
+      fontStyle: 'bold',
+      color: '#67e8f9'
+    }).setOrigin(0.5);
+    this.hudXpContainer.add(this.hudXpText);
 
     this.isHudVisible = GAME_CONFIG.hud.showByDefault;
     this.isExtendedHud = false;
@@ -351,6 +443,14 @@ export class GameScene extends Phaser.Scene {
     this.hudContainer.setPosition(visibleLeft, visibleTop);
     this.hudContainer.setScale(1 / z);
 
+    // Pin bottom XP bar to absolute bottom of visible screen
+    if (this.hudXpContainer) {
+      const bottomX = (cam.width / 2) * (1 - 1 / z);
+      const bottomY = (cam.height / 2) * (1 - 1 / z) + (cam.height - cam.height / z);
+      this.hudXpContainer.setPosition(bottomX, bottomY);
+      this.hudXpContainer.setScale(1 / z);
+    }
+
     const fps = Math.round(this.game.loop.actualFps);
     const destructionPct = this.cityGrid.getDestructionPercentage().toFixed(1);
     const scale = this.kaiju.currentScale.toFixed(1);
@@ -361,28 +461,75 @@ export class GameScene extends Phaser.Scene {
     const alertVal = this.alertSystem ? this.alertSystem.alert : 0;
     const alertName = this.alertSystem ? this.alertSystem.getLevelName() : 'AMAN';
 
-    const panelW = 196;
-    let panelH = 76;
+    // Format survival timer MM:SS
+    const mins = Math.floor(this.stats.survivalTime / 60);
+    const secs = Math.floor(this.stats.survivalTime % 60);
+    const timeStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+    // Format equipped weapons string
+    let weaponStr = '';
+    if (this.weaponSystem && this.weaponSystem.equippedWeapons.size > 0) {
+      const parts = [];
+      for (const [id, entry] of this.weaponSystem.equippedWeapons.entries()) {
+        const wDef = WEAPON_CONFIG.weapons[id];
+        const name = wDef ? wDef.name : id;
+        parts.push(`[${name} L${entry.level}]`);
+      }
+      weaponStr = parts.join(' ');
+    } else {
+      weaponStr = '-';
+    }
+
+    // Format active passives string
+    let passiveStr = '';
+    if (this.cardSystem && this.cardSystem.passiveLevels.size > 0) {
+      const parts = [];
+      const passiveShort = {
+        ironSkin: 'Baja',
+        regeneration: 'Regen',
+        magnet: 'Magnet',
+        swiftStride: 'Kaki',
+        colossus: 'Raksasa',
+        carnage: 'Bunuh',
+        rapidFire: 'Cepat',
+        demolisher: 'Perata',
+        thornShield: 'Duri'
+      };
+      for (const [k, lvl] of this.cardSystem.passiveLevels.entries()) {
+        if (lvl > 0) {
+          parts.push(`[${passiveShort[k] || k} L${lvl}]`);
+        }
+      }
+      passiveStr = parts.length > 0 ? parts.join(' ') : '-';
+    } else {
+      passiveStr = '-';
+    }
+
+    const totalKills = this.stats.humansKilled + this.stats.policeKilled + this.stats.carsDestroyed + this.stats.tanksDestroyed + this.stats.soldiersKilled + this.stats.helicoptersDestroyed + this.stats.dronesDestroyed;
+
+    const panelW = 208;
+    let panelH = 88;
 
     if (!this.isExtendedHud) {
-      panelH = 76;
+      panelH = 88;
       this.hudText.setText(
-        `HP: ${curHp}/${maxHp} | XP: ${this.stats.xp}\n` +
-        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(0)}/100)\n` +
-        `DESTRUCT: ${destructionPct}% | BLDGS: ${this.stats.buildingsDestroyed}\n` +
-        `FPS: ${fps} | SCALE: ${scale}x [F3] Telemetry\n` +
-        `[F] Grow | [R] Revive | [1-4] Zones`
+        `HP: ${curHp}/${maxHp} | WAKTU: ${timeStr} | KILLS: ${totalKills}\n` +
+        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(0)}/100) | KOTA: ${destructionPct}%\n` +
+        `SENJATA: ${weaponStr}\n` +
+        `PASIF: ${passiveStr}\n` +
+        `FPS: ${fps} [F3] Detail | [X] LvUp | [C] +500XP`
       );
     } else {
-      panelH = 114;
+      panelH = 132;
       const tc = this.enemyManager ? this.enemyManager.typeCounts : [0,0,0,0,0,0,0,0];
       const activeTot = this.enemyManager ? this.enemyManager.activeCount : 0;
       const updateMs = this.enemyManager ? this.enemyManager.lastUpdateTimeMs.toFixed(2) : '0.00';
 
       this.hudText.setText(
-        `HP: ${curHp}/${maxHp} | XP: ${this.stats.xp}\n` +
-        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(1)}/100)\n` +
-        `DESTRUCT: ${destructionPct}% | BLDGS: ${this.stats.buildingsDestroyed}\n` +
+        `HP: ${curHp}/${maxHp} | WAKTU: ${timeStr} | KILLS: ${totalKills}\n` +
+        `SIAGA ${alertLevel}: ${alertName} (${alertVal.toFixed(1)}/100) | KOTA: ${destructionPct}%\n` +
+        `SENJATA: ${weaponStr}\n` +
+        `PASIF: ${passiveStr}\n` +
         `KILLS: C:${this.stats.humansKilled} P:${this.stats.policeKilled} T:${this.stats.tanksDestroyed} S:${this.stats.soldiersKilled} H:${this.stats.helicoptersDestroyed} D:${this.stats.dronesDestroyed}\n` +
         `ACTIVE: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} (Tot:${activeTot})\n` +
         `ENEMY UPDATE: ${updateMs}ms | FPS: ${fps}\n` +
@@ -399,7 +546,7 @@ export class GameScene extends Phaser.Scene {
 
     // Render Health bar and Siaga meter bar
     this.hudBarGraphics.clear();
-    const barW = 184;
+    const barW = 196;
     const barX = 6;
 
     // 1. Health Bar
@@ -436,6 +583,25 @@ export class GameScene extends Phaser.Scene {
     for (let n = 0; n < notches.length; n++) {
       const notchX = barX + Math.round(barW * notches[n]);
       this.hudBarGraphics.fillRect(notchX, alertY, 1, 5);
+    }
+
+    // 3. Render Bottom Screen XP Bar (Tahap 4A)
+    if (this.hudXpGraphics && this.xpSystem) {
+      this.hudXpGraphics.clear();
+      const xpW = GAME_CONFIG.width;
+      const xpH = 4;
+      const xpY = GAME_CONFIG.height - 4;
+      const xpRatio = Math.max(0, Math.min(1.0, this.xpSystem.currentXp / this.xpSystem.targetXp));
+
+      // Dark background track
+      this.hudXpGraphics.fillStyle(0x0f172a, 0.95);
+      this.hudXpGraphics.fillRect(0, xpY, xpW, xpH);
+
+      // Cyan fill
+      this.hudXpGraphics.fillStyle(0x06b6d4, 1.0);
+      this.hudXpGraphics.fillRect(0, xpY, Math.round(xpW * xpRatio), xpH);
+
+      this.hudXpText.setText(`LEVEL ${this.xpSystem.level}   -   ${Math.floor(this.xpSystem.currentXp)} / ${this.xpSystem.targetXp} XP`);
     }
   }
 
@@ -504,6 +670,12 @@ export class GameScene extends Phaser.Scene {
     this.isGameOver = true;
     this.kaiju.isDead = true;
 
+    // Close card selection modal if open when dying
+    if (this.cardSystem) {
+      this.cardSystem.closeModal();
+    }
+    this.isCardSelecting = false;
+
     // 1. Slow-motion cinematic effect
     this.time.timeScale = 0.25;
 
@@ -565,11 +737,20 @@ export class GameScene extends Phaser.Scene {
       return; // Freeze update for hitstop duration
     }
 
+    // 1b. Rogue-lite Card Selection Pause (physics and world freeze while cards are shown)
+    if (this.isCardSelecting) {
+      if (this.cardSystem) {
+        this.cardSystem.update(dt);
+      }
+      this.updateHUD();
+      return;
+    }
+
     if (!this.isGameOver) {
       this.stats.survivalTime += dt;
     }
 
-    // 1b. Update AlertSystem threat escalation (Siaga 1-5, meter decay, floor timer)
+    // 1c. Update AlertSystem threat escalation (Siaga 1-5, meter decay, floor timer)
     if (this.alertSystem) {
       this.alertSystem.update(dt);
     }
@@ -607,13 +788,28 @@ export class GameScene extends Phaser.Scene {
     // 6. Update Ambient Crowd
     this.crowd.update(this.cameras.main, delta, this.kaiju);
 
+    // 6b. Update Automatic Weapons (Tahap 4A)
+    if (this.weaponSystem) {
+      this.weaponSystem.update(dt);
+    }
+
+    // 6c. Update XP System & Crystal Magnet (Tahap 4A)
+    if (this.xpSystem) {
+      this.xpSystem.update(dt, this.kaiju, this.cameras.main);
+    }
+
+    // 6d. Update Card System & Passives (Tahap 4A)
+    if (this.cardSystem) {
+      this.cardSystem.update(dt);
+    }
+
     // 7. Update Particle Manager
     this.particleManager.update(dt);
 
     // 8. Update Chunk Renderer (progressive loading & dirty rect batches)
     this.chunkRenderer.update(this.cameras.main);
 
-    // 9. Update HUD Telemetry & Health Bar
+    // 9. Update HUD Telemetry, Inventory, and XP Bar
     this.updateHUD();
   }
 
@@ -726,15 +922,17 @@ export class GameScene extends Phaser.Scene {
       bodyFoot,
       tailFoots,
       this.particleManager,
-      () => {
+      (hx, hy) => {
         this.stats.humansKilled++;
         this.stats.xp += GAME_CONFIG.destruction.xpPerHuman;
         if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killCivilian);
+        if (this.xpSystem) this.xpSystem.spawnCrystal(hx, hy, XP_CONFIG.drops.CITIZEN);
       },
-      () => {
+      (cx, cy) => {
         this.stats.carsDestroyed++;
         this.stats.xp += GAME_CONFIG.destruction.xpPerCar;
         if (this.alertSystem) this.alertSystem.addAlert(ALERT_CONFIG.gains.killPolice);
+        if (this.xpSystem) this.xpSystem.spawnCrystal(cx, cy, XP_CONFIG.drops.POLICE_CAR);
       }
     );
   }
@@ -756,6 +954,9 @@ export class GameScene extends Phaser.Scene {
     const isSkyscraper = building.heightLevel >= 8;
 
     this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
+    if (this.xpSystem) {
+      this.xpSystem.addDirectXp(XP_CONFIG.directXp.cellDestroyed);
+    }
     if (this.alertSystem) {
       this.alertSystem.addAlert(ALERT_CONFIG.gains.cellDestroyed);
     }
@@ -835,6 +1036,9 @@ export class GameScene extends Phaser.Scene {
               this.particleManager.emitDebris(ic.worldX, ic.worldY, building.baseColor, 2, 35);
               this.particleManager.emitDust(ic.worldX, ic.worldY, 1, 0.7);
               this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
+              if (this.xpSystem) {
+                this.xpSystem.addDirectXp(XP_CONFIG.directXp.cellDestroyed);
+              }
               if (this.alertSystem) {
                 this.alertSystem.addAlert(ALERT_CONFIG.gains.cellDestroyed);
               }
@@ -849,6 +1053,9 @@ export class GameScene extends Phaser.Scene {
       building.isFullyDestroyed = true;
       this.stats.buildingsDestroyed++;
       this.stats.xp += (collapseConfig.finalCollapseBonusXp || 150);
+      if (this.xpSystem) {
+        this.xpSystem.addDirectXp(XP_CONFIG.directXp.buildingCollapse);
+      }
       if (this.alertSystem) {
         this.alertSystem.addAlert(ALERT_CONFIG.gains.buildingDestroyed);
       }
