@@ -29,7 +29,12 @@ export const GAME_CONFIG = {
       swayFrequency: 0.006, // idle sway freq
       swayAmplitude: 0.12 // sway angle radians
     },
-    slots: ['body', 'back_slot', 'skin_overlay', 'head_slot', 'tail_slot']
+    slots: ['body', 'back_slot', 'skin_overlay', 'head_slot', 'tail_slot'],
+
+    // HP & Damage (Tahap 3A)
+    maxHp: 300, // Default Kaiju HP
+    invincibilityDuration: 0.1, // 100ms invulnerability window after taking damage
+    flashDuration: 0.08 // 80ms white flash on hit
   },
 
   // Destruction Tuning (Tahap 2B)

@@ -8,6 +8,7 @@ import { ChunkRenderer } from '../world/ChunkRenderer.js';
 import { Kaiju } from '../entities/Kaiju.js';
 import { Crowd } from '../entities/Crowd.js';
 import { ParticleManager } from '../effects/ParticleManager.js';
+import { EnemyManager, ENEMY_TYPES } from '../enemies/EnemyManager.js';
 
 /**
  * GameScene - Tahap 2B (Penghancuran Bangunan & Fisika Kerusakan)
@@ -29,9 +30,12 @@ export class GameScene extends Phaser.Scene {
     this.stats = {
       buildingsDestroyed: 0,
       humansKilled: 0,
+      policeKilled: 0,
       carsDestroyed: 0,
-      xp: 0
+      xp: 0,
+      survivalTime: 0
     };
+    this.isGameOver = false;
 
     // 2. Active collapse wave animations queue
     this.activeCollapses = [];
@@ -57,7 +61,10 @@ export class GameScene extends Phaser.Scene {
     const spawnY = WORLD_CONFIG.worldHeight / 2;
     this.kaiju = new Kaiju(this, spawnX, spawnY);
 
-    // 8. Spawn Crowd (400 pedestrians + 40 vehicles)
+    // 8. Spawn High-Performance Enemy & Threat Manager (Tahap 3A)
+    this.enemyManager = new EnemyManager(this, this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight);
+
+    // 8b. Spawn Ambient Crowd (Ambient vehicles & decorative pedestrians)
     this.crowd = new Crowd(this, this.cityData);
 
     // 9. Camera Setup
@@ -65,6 +72,9 @@ export class GameScene extends Phaser.Scene {
 
     // 10. HUD Setup
     this.setupHUD();
+
+    // 10b. Game Over Overlay Setup
+    this.setupGameOverOverlay();
 
     // 11. Debug Hotkeys Setup (F: Grow, R: Reset, 1-4: Teleport, F3: HUD)
     this.setupDebugKeys();
@@ -138,6 +148,12 @@ export class GameScene extends Phaser.Scene {
    * Performs a clean restart of the city without memory leaks or dangling listeners
    */
   restartCity() {
+    this.isGameOver = false;
+    this.time.timeScale = 1.0;
+    if (this.gameOverContainer) {
+      this.gameOverContainer.setVisible(false);
+    }
+
     // 1. Reset particle pools
     this.particleManager.reset();
 
@@ -157,7 +173,11 @@ export class GameScene extends Phaser.Scene {
     // 6. Re-create ChunkRenderer
     this.chunkRenderer = new ChunkRenderer(this, this.cityData);
 
-    // 7. Reset Crowd
+    // 7. Reset EnemyManager & Crowd
+    if (this.enemyManager) {
+      this.enemyManager.cityGrid = this.cityGrid;
+      this.enemyManager.reset();
+    }
     this.crowd.reset();
 
     // 8. Reset Kaiju position and stats
@@ -171,8 +191,10 @@ export class GameScene extends Phaser.Scene {
     this.stats = {
       buildingsDestroyed: 0,
       humansKilled: 0,
+      policeKilled: 0,
       carsDestroyed: 0,
-      xp: 0
+      xp: 0,
+      survivalTime: 0
     };
 
     // Immediate view refresh
@@ -180,7 +202,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Minimal HUD (Pixel font, destruction %, building/human kills, XP counter)
+   * Minimal HUD (Pixel font, destruction %, building/human kills, XP counter, HP Bar)
    */
   setupHUD() {
     this.hudContainer = this.add.container(6, 6);
@@ -189,12 +211,16 @@ export class GameScene extends Phaser.Scene {
 
     // Crisp dark panel
     this.hudBg = this.add.graphics();
-    this.hudBg.fillStyle(0x0b0a10, 0.85);
-    this.hudBg.fillRoundedRect(0, 0, 168, 56, 3);
+    this.hudBg.fillStyle(0x0b0a10, 0.88);
+    this.hudBg.fillRoundedRect(0, 0, 172, 68, 3);
     this.hudContainer.add(this.hudBg);
 
+    // Health bar graphics
+    this.hudBarGraphics = this.add.graphics();
+    this.hudContainer.add(this.hudBarGraphics);
+
     // Telemetry text
-    this.hudText = this.add.text(6, 5, '', {
+    this.hudText = this.add.text(6, 4, '', {
       fontFamily: 'monospace',
       fontSize: '8px',
       color: PALETTE.uiTextHex,
@@ -207,18 +233,162 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateHUD() {
-    if (!this.isHudVisible || !this.hudText) return;
+    if (!this.isHudVisible || !this.hudText || !this.hudContainer) return;
+
+    // Compensate for camera zoom to keep HUD pinned at exact top-left screen corner
+    const cam = this.cameras.main;
+    const z = cam.zoom || 1.0;
+    const visibleLeft = (cam.width / 2) * (1 - 1 / z) + (6 / z);
+    const visibleTop = (cam.height / 2) * (1 - 1 / z) + (6 / z);
+    this.hudContainer.setPosition(visibleLeft, visibleTop);
+    this.hudContainer.setScale(1 / z);
 
     const fps = Math.round(this.game.loop.actualFps);
     const destructionPct = this.cityGrid.getDestructionPercentage().toFixed(1);
     const scale = this.kaiju.currentScale.toFixed(1);
+    const curHp = Math.ceil(this.kaiju.hp);
+    const maxHp = this.kaiju.maxHp;
 
     this.hudText.setText(
-      `DESTRUCTION: ${destructionPct}% | XP: ${this.stats.xp}\n` +
-      `BUILDINGS: ${this.stats.buildingsDestroyed} | KILLS: ${this.stats.humansKilled}\n` +
+      `HP: ${curHp}/${maxHp} | XP: ${this.stats.xp}\n` +
+      `DESTRUCT: ${destructionPct}% | BLDGS: ${this.stats.buildingsDestroyed}\n` +
+      `CITIZENS: ${this.stats.humansKilled} | POLICE: ${this.stats.policeKilled}\n` +
       `SCALE: ${scale}x | FPS: ${fps} [F3] HUD\n` +
       `[F] Grow | [R] Reset | [1-4] Zones`
     );
+
+    // Dynamic color health bar
+    this.hudBarGraphics.clear();
+    const hpRatio = Math.max(0, this.kaiju.hp / this.kaiju.maxHp);
+    const barW = 160;
+    const barH = 5;
+    const barX = 6;
+    const barY = 57;
+
+    // Background track
+    this.hudBarGraphics.fillStyle(0x18181b, 0.9);
+    this.hudBarGraphics.fillRect(barX, barY, barW, barH);
+
+    // Fill color based on current health ratio
+    let fillColor = 0x10b981; // Emerald green
+    if (hpRatio < 0.25) fillColor = 0xef4444; // Red
+    else if (hpRatio < 0.50) fillColor = 0xf59e0b; // Amber orange
+
+    this.hudBarGraphics.fillStyle(fillColor, 1.0);
+    this.hudBarGraphics.fillRect(barX, barY, Math.round(barW * hpRatio), barH);
+  }
+
+  /**
+   * Sets up the "KAIJU TUMBANG" game over modal overlay
+   */
+  setupGameOverOverlay() {
+    this.gameOverContainer = this.add.container(0, 0);
+    this.gameOverContainer.setScrollFactor(0);
+    this.gameOverContainer.setDepth(200);
+    this.gameOverContainer.setVisible(false);
+
+    // Dark semi-transparent backdrop covering full 480x270 viewport
+    const backdrop = this.add.graphics();
+    backdrop.fillStyle(0x050408, 0.88);
+    backdrop.fillRect(0, 0, GAME_CONFIG.width, GAME_CONFIG.height);
+    this.gameOverContainer.add(backdrop);
+
+    // Modal Card
+    const card = this.add.graphics();
+    const cx = GAME_CONFIG.width / 2;
+    const cy = GAME_CONFIG.height / 2;
+    const cw = 250;
+    const ch = 152;
+    card.fillStyle(0x0f0e17, 0.96);
+    card.fillRoundedRect(cx - cw / 2, cy - ch / 2, cw, ch, 4);
+    card.lineStyle(1.5, 0xef4444, 0.9);
+    card.strokeRoundedRect(cx - cw / 2, cy - ch / 2, cw, ch, 4);
+    this.gameOverContainer.add(card);
+
+    // Title
+    const titleText = this.add.text(cx, cy - 54, 'KAIJU TUMBANG', {
+      fontFamily: 'monospace',
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: '#ef4444',
+      align: 'center'
+    }).setOrigin(0.5);
+    this.gameOverContainer.add(titleText);
+
+    // Stats summary text
+    this.gameOverStatsText = this.add.text(cx, cy - 6, '', {
+      fontFamily: 'monospace',
+      fontSize: '8px',
+      color: '#cbd5e1',
+      align: 'center',
+      lineSpacing: 4
+    }).setOrigin(0.5);
+    this.gameOverContainer.add(this.gameOverStatsText);
+
+    // Prompt to restart
+    const restartPrompt = this.add.text(cx, cy + 54, '[ TEKAN R UNTUK BANGKIT KEMBALI ]', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      fontStyle: 'bold',
+      color: '#fbbf24',
+      align: 'center'
+    }).setOrigin(0.5);
+    this.gameOverContainer.add(restartPrompt);
+  }
+
+  /**
+   * Catastrophic Kaiju collapse sequence when HP reaches 0
+   */
+  onKaijuDeath() {
+    this.isGameOver = true;
+    this.kaiju.isDead = true;
+
+    // 1. Slow-motion cinematic effect
+    this.time.timeScale = 0.25;
+
+    // 2. Heavy earthquake camera shake
+    this.cameras.main.shake(700, 0.015);
+
+    // 3. Massive explosion of Kaiju scales, dust, and sparks
+    this.particleManager.emitKaijuDeathExplosion(this.kaiju.x, this.kaiju.y);
+
+    // 4. Hide Kaiju body & segments
+    this.kaiju.container.setVisible(false);
+    if (this.kaiju.leftFoot) this.kaiju.leftFoot.setVisible(false);
+    if (this.kaiju.rightFoot) this.kaiju.rightFoot.setVisible(false);
+    if (this.kaiju.tailSegments) {
+      this.kaiju.tailSegments.forEach(seg => seg.sprite.setVisible(false));
+    }
+
+    // 5. Brief pause before displaying "KAIJU TUMBANG" summary dialog
+    this.time.delayedCall(700, () => {
+      this.time.timeScale = 1.0;
+      this.showGameOverModal();
+    });
+  }
+
+  showGameOverModal() {
+    const cam = this.cameras.main;
+    const z = cam.zoom || 1.0;
+    const visibleLeft = (cam.width / 2) * (1 - 1 / z);
+    const visibleTop = (cam.height / 2) * (1 - 1 / z);
+    this.gameOverContainer.setPosition(visibleLeft, visibleTop);
+    this.gameOverContainer.setScale(1 / z);
+
+    const mins = Math.floor(this.stats.survivalTime / 60);
+    const secs = Math.floor(this.stats.survivalTime % 60);
+    const timeStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    const destructionPct = this.cityGrid.getDestructionPercentage().toFixed(1);
+
+    this.gameOverStatsText.setText(
+      `WAKTU BERTAHAN: ${timeStr}\n` +
+      `KOTA HANCUR: ${destructionPct}%\n` +
+      `GEDUNG DIRATAKAN: ${this.stats.buildingsDestroyed}\n` +
+      `WARGA: ${this.stats.humansKilled} | POLISI: ${this.stats.policeKilled}\n` +
+      `TOTAL XP: ${this.stats.xp}`
+    );
+
+    this.gameOverContainer.setVisible(true);
   }
 
   /**
@@ -233,8 +403,17 @@ export class GameScene extends Phaser.Scene {
       return; // Freeze update for hitstop duration
     }
 
+    if (!this.isGameOver) {
+      this.stats.survivalTime += dt;
+    }
+
     // 2. Update Kaiju physics & animation
     this.kaiju.update(time, delta);
+
+    // Check if Kaiju died
+    if (this.kaiju.hp <= 0 && !this.isGameOver) {
+      this.onKaijuDeath();
+    }
 
     // 3. Process Trample Damage Pulses on 4x4 px grid
     this.trampleTimer += delta;
@@ -246,16 +425,21 @@ export class GameScene extends Phaser.Scene {
     // 4. Process Progressive Building Collapse Waves
     this.updateCollapseWaves(dt);
 
-    // 5. Update Crowd & Panic Fleeing
+    // 5. Update Enemies & Threat Manager (Tahap 3A)
+    if (this.enemyManager) {
+      this.enemyManager.update(this.cameras.main, dt, this.kaiju, this.particleManager);
+    }
+
+    // 6. Update Ambient Crowd
     this.crowd.update(this.cameras.main, delta, this.kaiju);
 
-    // 6. Update Particle Manager
+    // 7. Update Particle Manager
     this.particleManager.update(dt);
 
-    // 7. Update Chunk Renderer (progressive loading & dirty rect batches)
+    // 8. Update Chunk Renderer (progressive loading & dirty rect batches)
     this.chunkRenderer.update(this.cameras.main);
 
-    // 8. Update HUD Telemetry
+    // 9. Update HUD Telemetry & Health Bar
     this.updateHUD();
   }
 
@@ -335,7 +519,26 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // 4. Process Crowd Trampling (Humans squished, cars crushed)
+    // 4. Process Enemies Trampling (Tahap 3A: Panicking citizens, police, police cars)
+    if (this.enemyManager) {
+      this.enemyManager.checkKaijuTrample(
+        bodyFoot,
+        tailFoots,
+        this.particleManager,
+        (eType, xpGained) => {
+          this.stats.xp += xpGained;
+          if (eType === ENEMY_TYPES.CITIZEN) {
+            this.stats.humansKilled++;
+          } else if (eType === ENEMY_TYPES.POLICE) {
+            this.stats.policeKilled++;
+          } else if (eType === ENEMY_TYPES.POLICE_CAR) {
+            this.stats.carsDestroyed++;
+          }
+        }
+      );
+    }
+
+    // 4b. Process Ambient Crowd Trampling (Humans squished, cars crushed)
     this.crowd.checkKaijuTrample(
       bodyFoot,
       tailFoots,

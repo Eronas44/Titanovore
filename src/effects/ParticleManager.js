@@ -197,6 +197,28 @@ export class ParticleManager {
   }
 
   /**
+   * Massive catastrophic death explosion when Kaiju HP reaches 0
+   * @param {number} x 
+   * @param {number} y 
+   */
+  emitKaijuDeathExplosion(x, y) {
+    // 1. Shards of Kaiju scales, armor, and flesh radiating outwards
+    this.emitDebris(x, y, 0x3fa66b, 25, 95); // Emerald scales
+    this.emitDebris(x, y, 0x1f4d32, 20, 80); // Dark armor chunks
+    this.emitDebris(x, y, 0x8b1a1a, 15, 65); // Blood / tissue
+    this.emitDebris(x, y, 0xffd23f, 10, 110); // Yellow energy sparks
+
+    // 2. Billowing massive dust & smoke plumes
+    this.emitDust(x, y, 12, 2.5);
+    this.emitDust(x + 10, y - 5, 8, 2.0);
+    this.emitDust(x - 10, y + 5, 8, 2.0);
+
+    // 3. Blinding additive light bursts
+    this.emitCollapseFlash(x, y, 40);
+    this.emitCollapseFlash(x, y, 25);
+  }
+
+  /**
    * Main per-frame update loop.
    * Updates particle physics and performs zero-overhead batch draw.
    * @param {number} dt - Frame delta in seconds

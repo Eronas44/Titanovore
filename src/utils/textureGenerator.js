@@ -16,6 +16,7 @@ export class TextureGenerator {
     this.createElectricSkinTextures(scene);
     this.createPedestrianTextures(scene);
     this.createCarTextures(scene);
+    this.createEnemyTextures(scene);
     this.createParticleTextures(scene);
   }
 
@@ -367,6 +368,118 @@ export class TextureGenerator {
         canvas.refresh();
       }
     });
+  }
+
+  /**
+   * Procedural Enemy Textures - Tahap 3A
+   * Generates pixel-art sprites for:
+   * 1. Panicking Citizens (3x4 px) in diverse clothes
+   * 2. Police Officers (4x5 px) in navy uniform with cap & gun
+   * 3. Police Cruisers (9x5 px) with flashing dual-color siren lightbar
+   */
+  static createEnemyTextures(scene) {
+    // 1. Panicking Citizens (3x4 px, 4 clothing color variations)
+    const citizenClothes = ['#e06d53', '#eab308', '#0d9488', '#8b5cf6'];
+    citizenClothes.forEach((clothColor, idx) => {
+      const key = `enemy_citizen_${idx}`;
+      if (!scene.textures.exists(key)) {
+        const canvas = scene.textures.createCanvas(key, 3, 4);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        // Head
+        ctx.fillStyle = PALETTE.pedestrianSkinHex;
+        ctx.fillRect(1, 0, 1, 1);
+
+        // Clothes
+        ctx.fillStyle = clothColor;
+        ctx.fillRect(0, 1, 3, 2);
+
+        // Legs / Shoes
+        ctx.fillStyle = '#18181b';
+        ctx.fillRect(0, 3, 1, 1);
+        ctx.fillRect(2, 3, 1, 1);
+
+        canvas.refresh();
+      }
+    });
+
+    // 2. Police Officer (4x5 px)
+    if (!scene.textures.exists('enemy_police')) {
+      const canvas = scene.textures.createCanvas('enemy_police', 4, 5);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Dark Blue Cap with Gold Badge
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(1, 0, 2, 1);
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(1, 0, 1, 1);
+
+      // Face
+      ctx.fillStyle = PALETTE.pedestrianSkinHex;
+      ctx.fillRect(1, 1, 2, 1);
+
+      // Navy Uniform & White belt
+      ctx.fillStyle = '#1e3a8a';
+      ctx.fillRect(0, 2, 4, 2);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(1, 3, 2, 1); // Belt
+
+      // Gun Holster / Muzzle pointed forward
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(3, 2, 1, 1);
+
+      // Dark Pants & Boots
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 4, 1, 1);
+      ctx.fillRect(2, 4, 1, 1);
+
+      canvas.refresh();
+    }
+
+    // 3. Police Cruiser (9x5 px, 2 frames for alternating siren flash)
+    for (let f = 0; f < 2; f++) {
+      const key = `enemy_police_car_${f}`;
+      if (!scene.textures.exists(key)) {
+        const canvas = scene.textures.createCanvas(key, 9, 5);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        // Tires
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(1, 0, 2, 1);
+        ctx.fillRect(6, 0, 2, 1);
+        ctx.fillRect(1, 4, 2, 1);
+        ctx.fillRect(6, 4, 2, 1);
+
+        // Body: Dark Navy Bumpers, White Doors in Middle
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 1, 9, 3);
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(2, 1, 5, 3); // White door panels
+
+        // Windshields
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(6, 1, 1, 3); // Front windshield
+        ctx.fillRect(2, 1, 1, 3); // Rear windshield
+
+        // Sirens: Frame 0 (Red Top, Blue Bottom), Frame 1 (Blue Top, Red Bottom)
+        const topSiren = f === 0 ? '#ef4444' : '#3b82f6';
+        const bottomSiren = f === 0 ? '#3b82f6' : '#ef4444';
+        ctx.fillStyle = topSiren;
+        ctx.fillRect(4, 1, 1, 1);
+        ctx.fillStyle = bottomSiren;
+        ctx.fillRect(4, 3, 1, 1);
+
+        // Headlights (facing Right)
+        ctx.fillStyle = '#fef08a';
+        ctx.fillRect(8, 1, 1, 1);
+        ctx.fillRect(8, 3, 1, 1);
+
+        canvas.refresh();
+      }
+    }
   }
 
   /**

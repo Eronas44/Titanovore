@@ -89,9 +89,9 @@ export const WORLD_CONFIG = {
   streetLightRadius: 22, // Radius of warm ambient glow pool on ground
   parallelParkedCarChance: 0.28, // Chance of parked car per road curb segment
 
-  // Decorative Crowd (Performance Test)
-  pedestrianCount: 400, // ~400 humans restricted to sidewalks, zebra cross, and parks
-  carCount: 40, // ~40 moving cars restricted to road lanes
+  // Decorative Crowd (Tahap 2A/2B background ambiance)
+  pedestrianCount: 100, // Ambient civilians (Dynamic panicking crowd handled by EnemyManager)
+  carCount: 30, // Moving civilian cars restricted to road lanes
   pedestrianSize: { width: 3, height: 4 }, // 3x4 px
   carSize: { width: 8, height: 4 }, // 8x4 px
   crowdCullPadding: 100 // Frustum culling margin outside viewport

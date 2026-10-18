@@ -52,6 +52,13 @@ export class Kaiju {
 
     // Centralized scaling
     this.setKaijuScale(this.config.initialScale);
+
+    // HP, Invulnerability & Death (Tahap 3A)
+    this.maxHp = this.config.maxHp || 300;
+    this.hp = this.maxHp;
+    this.invincibleTimer = 0;
+    this.flashTimer = 0;
+    this.isDead = false;
   }
 
   /**
@@ -222,6 +229,19 @@ export class Kaiju {
   update(time, delta) {
     const dt = delta / 1000;
 
+    // Update invincibility & flash timers
+    if (this.invincibleTimer > 0) {
+      this.invincibleTimer = Math.max(0, this.invincibleTimer - dt);
+    }
+    if (this.flashTimer > 0) {
+      this.flashTimer = Math.max(0, this.flashTimer - dt);
+      if (this.flashTimer === 0) {
+        this.applyHitFlash(false);
+      }
+    }
+
+    if (this.isDead) return;
+
     this.handleMovement(dt);
     this.handleRotation(dt);
     this.updateTail(time, dt);
@@ -230,6 +250,50 @@ export class Kaiju {
 
     // Sync container position
     this.container.setPosition(this.x, this.y);
+  }
+
+  /**
+   * Applies damage to Kaiju with brief invulnerability window & white hit flash.
+   * @param {number} amount 
+   * @returns {boolean} Whether damage was taken
+   */
+  takeDamage(amount) {
+    if (this.isDead || this.invincibleTimer > 0) return false;
+
+    this.hp = Math.max(0, this.hp - amount);
+    this.invincibleTimer = this.config.invincibilityDuration || 0.1; // 100ms
+    this.flashTimer = this.config.flashDuration || 0.08; // 80ms
+    this.applyHitFlash(true);
+
+    return true;
+  }
+
+  /**
+   * Applies a brief white hit flash across Kaiju layers and segments
+   * @param {boolean} enable 
+   */
+  applyHitFlash(enable) {
+    this.layers.forEach(layer => {
+      if (layer.sprite) {
+        if (enable) layer.sprite.setTintFill(0xffffff);
+        else layer.sprite.clearTint();
+      }
+    });
+
+    if (this.leftFoot) {
+      if (enable) this.leftFoot.setTintFill(0xffffff);
+      else this.leftFoot.clearTint();
+    }
+    if (this.rightFoot) {
+      if (enable) this.rightFoot.setTintFill(0xffffff);
+      else this.rightFoot.clearTint();
+    }
+    if (this.tailSegments) {
+      this.tailSegments.forEach(seg => {
+        if (enable) seg.sprite.setTintFill(0xffffff);
+        else seg.sprite.clearTint();
+      });
+    }
   }
 
   /**
@@ -493,7 +557,18 @@ export class Kaiju {
       seg.angle = 0;
       seg.sprite.setPosition(seg.x, seg.y);
       seg.sprite.setRotation(0);
+      seg.sprite.setVisible(true);
     });
+
+    // Reset HP & death state
+    this.hp = this.maxHp;
+    this.isDead = false;
+    this.invincibleTimer = 0;
+    this.flashTimer = 0;
+    this.applyHitFlash(false);
+    this.container.setVisible(true);
+    if (this.leftFoot) this.leftFoot.setVisible(true);
+    if (this.rightFoot) this.rightFoot.setVisible(true);
   }
 
   /**
