@@ -458,6 +458,7 @@ export class EnemyManager {
         this.scene.stats.dronesDestroyed++;
         this.scene.stats.xp += ENEMY_CONFIG.types.DRONE.xp;
         if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.DRONE);
+        if (this.scene.cardSystem) this.scene.cardSystem.handleEnemyKilled(eType, ex, ey);
         this.despawnEnemy(idx);
         return true;
       } else {
@@ -495,6 +496,7 @@ export class EnemyManager {
           this.scene.stats.xp += ENEMY_CONFIG.types.POLICE_CAR.xp;
           if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.POLICE_CAR);
         }
+        if (this.scene.cardSystem) this.scene.cardSystem.handleEnemyKilled(eType, ex, ey);
         this.despawnEnemy(idx);
         return true;
       }
@@ -869,6 +871,7 @@ export class EnemyManager {
               this.scene.stats.helicoptersDestroyed++;
               this.scene.stats.xp += cfg.xp;
               if (this.scene.xpSystem) this.scene.xpSystem.spawnCrystal(ex, ey, XP_CONFIG.drops.HELICOPTER);
+              if (this.scene.cardSystem) this.scene.cardSystem.handleEnemyKilled(ENEMY_TYPES.HELICOPTER, ex, ey);
               this.despawnEnemy(i);
               continue;
             }

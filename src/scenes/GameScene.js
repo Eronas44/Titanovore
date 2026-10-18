@@ -841,6 +841,9 @@ export class GameScene extends Phaser.Scene {
       building.isFullyDestroyed = true;
       this.stats.buildingsDestroyed++;
       this.stats.xp += (collapseConfig.finalCollapseBonusXp || 150);
+      if (this.cardSystem) {
+        this.cardSystem.handleBuildingDestroyed();
+      }
       if (this.xpSystem) {
         this.xpSystem.addDirectXp(XP_CONFIG.directXp.buildingCollapse);
       }
@@ -882,6 +885,9 @@ export class GameScene extends Phaser.Scene {
     building.isCollapsed = true;
     this.stats.buildingsDestroyed++;
     this.stats.xp += GAME_CONFIG.destruction.xpPerBuildingCollapse;
+    if (this.cardSystem) {
+      this.cardSystem.handleBuildingDestroyed();
+    }
 
     const heightLevel = building.heightLevel || 3;
     const bCenterX = building.x + building.width / 2;

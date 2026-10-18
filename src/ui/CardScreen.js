@@ -159,9 +159,16 @@ export class CardScreen {
       }
       pipsHtml += '</div>';
 
+      const mutationBadgeHtml = card.isMutation
+        ? `<span class="card-mutation-badge">${ICONS.dna} MUTASI</span>`
+        : '';
+
       btn.innerHTML = `
         <div class="card-top-row">
-          <span class="card-rarity-badge" style="color: ${rarity.color}; border-color: ${rarity.color};">${rarity.name}</span>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <span class="card-rarity-badge" style="color: ${rarity.color}; border-color: ${rarity.color};">${rarity.name}</span>
+            ${mutationBadgeHtml}
+          </div>
           <span class="card-hotkey-badge">[ ${index + 1} ]</span>
         </div>
 

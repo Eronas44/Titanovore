@@ -27,6 +27,7 @@ export class XpSystem {
 
     // Passive modifiers
     this.magnetRadiusBonus = 0;
+    this.eliteXpMultiplier = 1.0;
 
     // Pre-allocated Crystal Pool (Capacity 300)
     this.maxCrystals = XP_CONFIG.maxCrystals;
@@ -58,6 +59,11 @@ export class XpSystem {
    */
   spawnCrystal(x, y, value = 1) {
     if (value <= 0) return -1;
+
+    // Apply Penjarah / Scavenger multiplier to vehicle/military drops (value >= 4)
+    if (value >= 4 && this.eliteXpMultiplier > 1.0) {
+      value = Math.round(value * this.eliteXpMultiplier);
+    }
 
     // Proximity merge check: if pool is crowded, merge into closest crystal within radius
     if (this.activeCount >= XP_CONFIG.mergeThresholdCount) {
@@ -258,6 +264,7 @@ export class XpSystem {
     this.currentXp = 0;
     this.targetXp = XP_CONFIG.getXpRequiredForLevel(1);
     this.magnetRadiusBonus = 0;
+    this.eliteXpMultiplier = 1.0;
 
     for (let i = 0; i < this.maxCrystals; i++) {
       this.active[i] = 0;

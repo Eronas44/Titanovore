@@ -37,6 +37,18 @@ export class Kaiju {
     // Supported slots: 'body', 'back_slot', 'skin_overlay', 'head_slot', 'tail_slot'
     this.layers = new Map();
 
+    // Visual Mutations Architecture (Tahap 4B-1)
+    this.mutationSprites = new Map(); // weaponId -> Sprite
+    this.tailSpikeSprites = []; // Array<{ sprite, segmentIndex }>
+    this.energyShieldSprite = null;
+    this.currentShield = 0;
+    this.maxShield = 0;
+    this.shieldRechargeDelay = 6.0;
+    this.shieldRechargeTimer = 0;
+    this.reflectChance = 0;
+    this.reflectMultiplier = 1.0;
+    this.hasElectricSkinMutation = false;
+
     // Electric skin animation state
     this.electricFrame = 0;
     this.electricTimer = 0;
@@ -199,6 +211,122 @@ export class Kaiju {
   }
 
   /**
+   * Sets or upgrades visual mutation layer corresponding to an equipped weapon (Tahap 4B-1).
+   * Tiers: Level 1 (Lv 1-2), Level 3 (Lv 3-4), Level 5 (Lv 5 dramatic special).
+   * @param {string} weaponId 
+   * @param {number} level 
+   */
+  setMutation(weaponId, level = 1) {
+    const tier = level >= 5 ? 5 : (level >= 3 ? 3 : 1);
+
+    if (weaponId === 'spiked_tail') {
+      this.updateTailSpikes(tier);
+      return;
+    }
+
+    if (weaponId === 'electric_skin') {
+      this.hasElectricSkinMutation = true;
+      if (!this.mutationSprites.has('electric_skin')) {
+        const sprite = this.scene.add.sprite(0, 0, 'kaiju_electric_skin_0');
+        sprite.setOrigin(0.5, 0.5);
+        this.container.add(sprite);
+        this.mutationSprites.set('electric_skin', sprite);
+      }
+      return;
+    }
+
+    const texKey = `mutation_${weaponId}_${tier}`;
+    if (this.scene.textures.exists(texKey)) {
+      if (this.mutationSprites.has(weaponId)) {
+        const sprite = this.mutationSprites.get(weaponId);
+        sprite.setTexture(texKey);
+      } else {
+        const sprite = this.scene.add.sprite(0, 0, texKey);
+        sprite.setOrigin(0.5, 0.5);
+        this.container.add(sprite);
+        this.mutationSprites.set(weaponId, sprite);
+      }
+    }
+  }
+
+  /**
+   * Updates tail spikes attached to snake-like trailing tail segments
+   * @param {number} tier - 1, 3, or 5
+   */
+  updateTailSpikes(tier) {
+    this.clearTailSpikes();
+
+    const spikeKey = `mutation_spiked_tail_${tier}`;
+    if (!this.scene.textures.exists(spikeKey)) return;
+
+    this.tailSegments.forEach((seg, idx) => {
+      // Tip segment always gets heavy morningstar club, earlier segments get dorsal spikes at tier >= 3
+      if (idx === this.tailSegments.length - 1 || (tier >= 3 && idx >= 2)) {
+        const spike = this.scene.add.sprite(seg.x, seg.y, spikeKey);
+        spike.setDepth(14.5);
+        spike.setScale(this.currentScale * (idx === this.tailSegments.length - 1 ? 1.0 : 0.7));
+        this.tailSpikeSprites.push({ sprite: spike, segmentIndex: idx });
+      }
+    });
+  }
+
+  /**
+   * Clears tail spike sprites
+   */
+  clearTailSpikes() {
+    if (this.tailSpikeSprites) {
+      this.tailSpikeSprites.forEach(item => {
+        if (item.sprite) item.sprite.destroy();
+      });
+      this.tailSpikeSprites = [];
+    }
+  }
+
+  /**
+   * Activates or updates Energy Shield bubble
+   * @param {number} capacity 
+   * @param {number} delay 
+   */
+  setEnergyShield(capacity, delay = 6.0) {
+    this.maxShield = capacity;
+    this.currentShield = capacity;
+    this.shieldRechargeDelay = delay;
+    this.shieldRechargeTimer = 0;
+
+    if (!this.energyShieldSprite) {
+      this.energyShieldSprite = this.scene.add.sprite(0, 0, 'energy_shield_bubble');
+      this.energyShieldSprite.setOrigin(0.5, 0.5);
+      this.container.add(this.energyShieldSprite);
+    }
+    this.energyShieldSprite.setVisible(true);
+  }
+
+  /**
+   * Removes all mutation layers and restores base anatomy (RunState reset)
+   */
+  clearAllMutations() {
+    if (this.mutationSprites) {
+      this.mutationSprites.forEach(sprite => {
+        if (sprite) {
+          this.container.remove(sprite);
+          sprite.destroy();
+        }
+      });
+      this.mutationSprites.clear();
+    }
+    this.hasElectricSkinMutation = false;
+    this.clearTailSpikes();
+
+    if (this.energyShieldSprite) {
+      this.container.remove(this.energyShieldSprite);
+      this.energyShieldSprite.destroy();
+      this.energyShieldSprite = null;
+    }
+    this.currentShield = 0;
+    this.maxShield = 0;
+  }
+
+  /**
    * Centralized Kaiju scale function.
    * Readies Kaiju for Phase 2+ evolution, resizing body, feet, tail segments, and collision box.
    * @param {number} scale 
@@ -249,25 +377,84 @@ export class Kaiju {
     this.updateFeetAndSteps(dt);
     this.updateElectricSkin(delta);
 
+    // Sync tail spike positions with tail segments
+    if (this.tailSpikeSprites && this.tailSpikeSprites.length > 0) {
+      this.tailSpikeSprites.forEach(item => {
+        const seg = this.tailSegments[item.segmentIndex];
+        if (seg && item.sprite) {
+          item.sprite.setPosition(seg.x, seg.y);
+          item.sprite.setRotation(seg.angle);
+        }
+      });
+    }
+
+    // Energy Shield rotation & recharge timer
+    if (this.maxShield > 0) {
+      if (this.shieldRechargeTimer > 0) {
+        this.shieldRechargeTimer = Math.max(0, this.shieldRechargeTimer - dt);
+        if (this.shieldRechargeTimer === 0 && this.currentShield < this.maxShield) {
+          this.currentShield = this.maxShield;
+          if (this.energyShieldSprite) {
+            this.energyShieldSprite.setVisible(true);
+            this.energyShieldSprite.setAlpha(0.85);
+          }
+          if (this.scene && this.scene.particleManager) {
+            this.scene.particleManager.emitSparks(this.x, this.y, 0x38bdf8, 12, 50);
+          }
+        }
+      }
+
+      if (this.energyShieldSprite && this.currentShield > 0) {
+        this.energyShieldSprite.rotation += dt * 0.8;
+      }
+    }
+
     // Sync container position
     this.container.setPosition(this.x, this.y);
   }
 
   /**
-   * Applies damage to Kaiju with brief invulnerability window & white hit flash.
+   * Applies damage to Kaiju with deflector check, shield absorption, invulnerability window & white hit flash.
    * @param {number} amount 
    * @returns {boolean} Whether damage was taken
    */
   takeDamage(amount) {
     if (this.isDead || this.invincibleTimer > 0) return false;
 
+    // 1. Deflector passive check (bullet reflection)
+    if (this.reflectChance > 0 && Math.random() < this.reflectChance) {
+      if (this.scene && this.scene.weaponSystem) {
+        this.scene.weaponSystem.reflectEnemyBullet(this.x, this.y, this.reflectMultiplier);
+      }
+      return false; // Bullet deflected!
+    }
+
+    // 2. Energy Shield absorption
+    if (this.currentShield > 0) {
+      this.shieldRechargeTimer = this.shieldRechargeDelay;
+      const absorbed = Math.min(this.currentShield, amount);
+      this.currentShield -= absorbed;
+      amount -= absorbed;
+
+      if (this.scene && this.scene.particleManager) {
+        this.scene.particleManager.emitSparks(this.x, this.y, 0x38bdf8, 6, 40);
+      }
+
+      if (this.currentShield <= 0 && this.energyShieldSprite) {
+        this.energyShieldSprite.setVisible(false);
+      }
+
+      if (amount <= 0) return true; // Fully absorbed by shield!
+    }
+
+    // 3. Regular HP damage
     this.hp = Math.max(0, this.hp - amount);
     this.invincibleTimer = this.config.invincibilityDuration || 0.1; // 100ms
     this.flashTimer = this.config.flashDuration || 0.08; // 80ms
     this.applyHitFlash(true);
 
     if (this.scene && this.scene.weaponSystem) {
-      this.scene.weaponSystem.triggerThornBurst();
+      this.scene.weaponSystem.triggerThornBurst(amount);
     }
 
     return true;
@@ -284,6 +471,15 @@ export class Kaiju {
         else layer.sprite.clearTint();
       }
     });
+
+    if (this.mutationSprites) {
+      this.mutationSprites.forEach(sprite => {
+        if (sprite) {
+          if (enable) sprite.setTintFill(0xffffff);
+          else sprite.clearTint();
+        }
+      });
+    }
 
     if (this.leftFoot) {
       if (enable) this.leftFoot.setTintFill(0xffffff);
@@ -571,6 +767,7 @@ export class Kaiju {
     this.invincibleTimer = 0;
     this.flashTimer = 0;
     this.applyHitFlash(false);
+    this.clearAllMutations();
     this.container.setVisible(true);
     if (this.leftFoot) this.leftFoot.setVisible(true);
     if (this.rightFoot) this.rightFoot.setVisible(true);
@@ -580,6 +777,7 @@ export class Kaiju {
    * Clean up all game objects
    */
   destroy() {
+    this.clearAllMutations();
     this.container.destroy();
     if (this.leftFoot) this.leftFoot.destroy();
     if (this.rightFoot) this.rightFoot.destroy();

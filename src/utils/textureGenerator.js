@@ -19,6 +19,7 @@ export class TextureGenerator {
     this.createEnemyTextures(scene);
     this.createParticleTextures(scene);
     this.createCardAndWeaponTextures(scene);
+    this.createMutationTextures(scene);
   }
 
   /**
@@ -970,6 +971,424 @@ export class TextureGenerator {
       ctx.fillRect(1, 7, 3, 2);
       ctx.fillRect(12, 7, 3, 2);
     });
+  }
+
+  /**
+   * Procedural Visual Mutation Textures (Tahap 4B-1)
+   * Detailed, modular layers corresponding to weapons at level tiers 1, 3, 5.
+   * Rendered on top of Kaiju body/slots with zero external image files.
+   */
+  static createMutationTextures(scene) {
+    const size = GAME_CONFIG.kaiju.baseSize; // 56x56
+    const half = size / 2; // 28
+
+    const createLayer = (key, drawFn) => {
+      if (scene.textures.exists(key)) return;
+      const canvas = scene.textures.createCanvas(key, size, size);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      drawFn(ctx, half, size);
+      canvas.refresh();
+    };
+
+    // 1. CLAW (Cakar) - Forelimb raptor talons
+    createLayer('mutation_claw_1', (ctx, h) => {
+      ctx.fillStyle = '#fef08a';
+      // Right arm claws
+      ctx.fillRect(h + 13, h - 16, 4, 2);
+      ctx.fillRect(h + 11, h - 18, 4, 2);
+      // Left arm claws
+      ctx.fillRect(h + 13, h + 14, 4, 2);
+      ctx.fillRect(h + 11, h + 16, 4, 2);
+    });
+
+    createLayer('mutation_claw_3', (ctx, h) => {
+      // Dark under-claw
+      ctx.fillStyle = '#064e3b';
+      ctx.fillRect(h + 12, h - 18, 6, 4);
+      ctx.fillRect(h + 12, h + 14, 6, 4);
+      // Emerald razor talons
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(h + 14, h - 18, 5, 2);
+      ctx.fillRect(h + 12, h - 20, 5, 2);
+      ctx.fillRect(h + 14, h + 16, 5, 2);
+      ctx.fillRect(h + 12, h + 18, 5, 2);
+      // Highlight edge
+      ctx.fillStyle = '#a7f3d0';
+      ctx.fillRect(h + 17, h - 18, 2, 1);
+      ctx.fillRect(h + 15, h - 20, 2, 1);
+      ctx.fillRect(h + 17, h + 17, 2, 1);
+      ctx.fillRect(h + 15, h + 19, 2, 1);
+    });
+
+    createLayer('mutation_claw_5', (ctx, h) => {
+      // Massive glowing jade & gold bone scythe talons
+      ctx.fillStyle = '#042f2e';
+      ctx.fillRect(h + 10, h - 21, 9, 6);
+      ctx.fillRect(h + 10, h + 15, 9, 6);
+      // Glowing green blades
+      ctx.fillStyle = '#34d399';
+      ctx.fillRect(h + 14, h - 21, 6, 3);
+      ctx.fillRect(h + 12, h - 23, 6, 3);
+      ctx.fillRect(h + 14, h + 18, 6, 3);
+      ctx.fillRect(h + 12, h + 20, 6, 3);
+      // Gold lightning highlights
+      ctx.fillStyle = '#fde047';
+      ctx.fillRect(h + 18, h - 20, 3, 2);
+      ctx.fillRect(h + 16, h - 22, 3, 2);
+      ctx.fillRect(h + 18, h + 19, 3, 2);
+      ctx.fillRect(h + 16, h + 21, 3, 2);
+      // Spark dots
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(h + 20, h - 20, 1, 1);
+      ctx.fillRect(h + 20, h + 20, 1, 1);
+    });
+
+    // 2. BACK CANNON (Meriam Punggung) - Dual heavy artillery barrels
+    createLayer('mutation_back_cannon_1', (ctx, h) => {
+      ctx.fillStyle = '#1e293b'; // Gunmetal mount
+      ctx.fillRect(h - 11, h - 12, 10, 4);
+      ctx.fillRect(h - 11, h + 8, 10, 4);
+      ctx.fillStyle = '#475569'; // Barrels
+      ctx.fillRect(h - 8, h - 11, 8, 2);
+      ctx.fillRect(h - 8, h + 9, 8, 2);
+    });
+
+    createLayer('mutation_back_cannon_3', (ctx, h) => {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(h - 13, h - 13, 13, 5);
+      ctx.fillRect(h - 13, h + 8, 13, 5);
+      // Heavy rifled barrels
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(h - 9, h - 12, 11, 3);
+      ctx.fillRect(h - 9, h + 9, 11, 3);
+      // Muzzle brakes & recoil springs
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(h + 1, h - 13, 2, 5);
+      ctx.fillRect(h + 1, h + 8, 2, 5);
+    });
+
+    createLayer('mutation_back_cannon_5', (ctx, h) => {
+      // Railgun battery with glowing cyan energy coils
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(h - 14, h - 14, 16, 6);
+      ctx.fillRect(h - 14, h + 8, 16, 6);
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(h - 10, h - 13, 14, 4);
+      ctx.fillRect(h - 10, h + 9, 14, 4);
+      // Cyan glowing accelerator coils
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(h - 7, h - 14, 2, 6);
+      ctx.fillRect(h - 3, h - 14, 2, 6);
+      ctx.fillRect(h + 1, h - 14, 2, 6);
+      ctx.fillRect(h - 7, h + 8, 2, 6);
+      ctx.fillRect(h - 3, h + 8, 2, 6);
+      ctx.fillRect(h + 1, h + 8, 2, 6);
+      // Muzzle beam tip
+      ctx.fillStyle = '#e0f2fe';
+      ctx.fillRect(h + 3, h - 12, 2, 2);
+      ctx.fillRect(h + 3, h + 10, 2, 2);
+    });
+
+    // 3. BACK ROCKETS (Roket Punggung) - Shoulder missile pods
+    createLayer('mutation_back_rockets_1', (ctx, h) => {
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(h - 7, h - 14, 8, 6);
+      ctx.fillRect(h - 7, h + 8, 8, 6);
+      // Orange rocket warhead tips
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(h, h - 13, 2, 2);
+      ctx.fillRect(h, h - 10, 2, 2);
+      ctx.fillRect(h, h + 9, 2, 2);
+      ctx.fillRect(h, h + 12, 2, 2);
+    });
+
+    createLayer('mutation_back_rockets_3', (ctx, h) => {
+      ctx.fillStyle = '#0c0a09';
+      ctx.fillRect(h - 9, h - 15, 11, 7);
+      ctx.fillRect(h - 9, h + 8, 11, 7);
+      // Quad rocket cells
+      ctx.fillStyle = '#ea580c';
+      ctx.fillRect(h + 1, h - 14, 2, 2);
+      ctx.fillRect(h + 1, h - 11, 2, 2);
+      ctx.fillRect(h + 1, h + 9, 2, 2);
+      ctx.fillRect(h + 1, h + 12, 2, 2);
+      // Targeting laser dot
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(h - 4, h - 16, 2, 1);
+      ctx.fillRect(h - 4, h + 15, 2, 1);
+    });
+
+    createLayer('mutation_back_rockets_5', (ctx, h) => {
+      // 6-tube hex armored pods with hazard stripes
+      ctx.fillStyle = '#09090b';
+      ctx.fillRect(h - 11, h - 16, 14, 8);
+      ctx.fillRect(h - 11, h + 8, 14, 8);
+      // Yellow hazard trim
+      ctx.fillStyle = '#eab308';
+      ctx.fillRect(h - 11, h - 17, 14, 1);
+      ctx.fillRect(h - 11, h + 16, 14, 1);
+      // Hex warheads
+      ctx.fillStyle = '#ef4444';
+      for (let r = 0; r < 3; r++) {
+        ctx.fillRect(h + 2, h - 15 + r * 2.5, 2, 2);
+        ctx.fillRect(h + 2, h + 9 + r * 2.5, 2, 2);
+      }
+      // Glowing thruster heat vent
+      ctx.fillStyle = '#ffedd5';
+      ctx.fillRect(h - 10, h - 14, 2, 4);
+      ctx.fillRect(h - 10, h + 10, 2, 4);
+    });
+
+    // 4. BODY SPIKES (Duri Tubuh) - Jagged spines along ribs & flanks
+    createLayer('mutation_body_spikes_1', (ctx, h) => {
+      ctx.fillStyle = '#1c1917';
+      // Lateral flank spines
+      const xOffsets = [-10, -3, 4];
+      xOffsets.forEach(x => {
+        ctx.fillRect(h + x, h - 16, 2, 3);
+        ctx.fillRect(h + x, h + 13, 2, 3);
+      });
+      ctx.fillStyle = '#78716c';
+      xOffsets.forEach(x => {
+        ctx.fillRect(h + x, h - 17, 1, 2);
+        ctx.fillRect(h + x, h + 15, 1, 2);
+      });
+    });
+
+    createLayer('mutation_body_spikes_3', (ctx, h) => {
+      ctx.fillStyle = '#0f172a';
+      const xOffsets = [-12, -7, -2, 3, 8];
+      xOffsets.forEach(x => {
+        ctx.fillRect(h + x, h - 18, 3, 5);
+        ctx.fillRect(h + x, h + 13, 3, 5);
+      });
+      // Crimson tipped barb points
+      ctx.fillStyle = '#dc2626';
+      xOffsets.forEach(x => {
+        ctx.fillRect(h + x, h - 20, 2, 3);
+        ctx.fillRect(h + x, h + 17, 2, 3);
+      });
+    });
+
+    createLayer('mutation_body_spikes_5', (ctx, h) => {
+      // Monstrous Behemoth Bone Carapace
+      ctx.fillStyle = '#030712';
+      const xOffsets = [-14, -9, -4, 1, 6, 11];
+      xOffsets.forEach((x, i) => {
+        const len = 5 + (i % 3) * 2;
+        ctx.fillRect(h + x, h - 16 - len, 3, len + 3);
+        ctx.fillRect(h + x, h + 13, 3, len + 3);
+      });
+      // Glowing blood-red magma edges
+      ctx.fillStyle = '#ff5c39';
+      xOffsets.forEach((x, i) => {
+        const len = 5 + (i % 3) * 2;
+        ctx.fillRect(h + x, h - 18 - len, 2, 3);
+        ctx.fillRect(h + x, h + 15 + len, 2, 3);
+      });
+      // Center dorsal crest surge
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(h - 10, h - 1, 18, 2);
+    });
+
+    // 5. FIRE BREATH (Napas Api) - Molten jaw & horns
+    createLayer('mutation_fire_breath_1', (ctx, h) => {
+      // Molten throat slit
+      ctx.fillStyle = '#ea580c';
+      ctx.fillRect(h + 18, h - 2, 4, 4);
+      ctx.fillStyle = '#fde047';
+      ctx.fillRect(h + 19, h - 1, 2, 2);
+    });
+
+    createLayer('mutation_fire_breath_3', (ctx, h) => {
+      // Blazing jaw & mini curved horns
+      ctx.fillStyle = '#c2410c';
+      ctx.fillRect(h + 17, h - 4, 6, 8);
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(h + 19, h - 3, 4, 6);
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(h + 21, h - 2, 3, 4);
+      // Small obsidian horns
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(h + 12, h - 9, 3, 4);
+      ctx.fillRect(h + 12, h + 5, 3, 4);
+    });
+
+    createLayer('mutation_fire_breath_5', (ctx, h) => {
+      // Infernal dragon visage: Sweeping horns and roaring magma maw
+      ctx.fillStyle = '#0f0502';
+      // Sweeping demonic horns
+      ctx.fillRect(h + 10, h - 12, 4, 7);
+      ctx.fillRect(h + 7, h - 15, 4, 5);
+      ctx.fillRect(h + 10, h + 5, 4, 7);
+      ctx.fillRect(h + 7, h + 10, 4, 5);
+      // Fiery horn tips
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(h + 5, h - 16, 3, 3);
+      ctx.fillRect(h + 5, h + 13, 3, 3);
+      // Raging molten jaw
+      ctx.fillStyle = '#ea580c';
+      ctx.fillRect(h + 16, h - 5, 8, 10);
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(h + 19, h - 3, 6, 6);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(h + 22, h - 1, 3, 2);
+    });
+
+    // 6. LASER EYES (Mata Laser) - Crimson ocular implants
+    createLayer('mutation_laser_eyes_1', (ctx, h) => {
+      ctx.fillStyle = '#ff1e42';
+      ctx.fillRect(h + 15, h - 6, 4, 3);
+      ctx.fillRect(h + 15, h + 3, 4, 3);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(h + 17, h - 5, 1, 1);
+      ctx.fillRect(h + 17, h + 4, 1, 1);
+    });
+
+    createLayer('mutation_laser_eyes_3', (ctx, h) => {
+      ctx.fillStyle = '#450a0a';
+      ctx.fillRect(h + 14, h - 8, 6, 5);
+      ctx.fillRect(h + 14, h + 3, 6, 5);
+      // Bright ruby ocular laser core
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(h + 15, h - 7, 5, 3);
+      ctx.fillRect(h + 15, h + 4, 5, 3);
+      // Focused optic dot
+      ctx.fillStyle = '#fecaca';
+      ctx.fillRect(h + 18, h - 6, 2, 2);
+      ctx.fillRect(h + 18, h + 5, 2, 2);
+    });
+
+    createLayer('mutation_laser_eyes_5', (ctx, h) => {
+      // Overcharged Death-Ray ocular lenses with glowing energy conduits
+      ctx.fillStyle = '#1c0303';
+      ctx.fillRect(h + 13, h - 9, 8, 7);
+      ctx.fillRect(h + 13, h + 2, 8, 7);
+      // Red energy conduit lines back to spine
+      ctx.fillStyle = '#b91c1c';
+      ctx.fillRect(h + 7, h - 6, 7, 1);
+      ctx.fillRect(h + 7, h + 5, 7, 1);
+      // Intense crimson laser corona
+      ctx.fillStyle = '#ff1e42';
+      ctx.fillRect(h + 14, h - 8, 7, 5);
+      ctx.fillRect(h + 14, h + 3, 7, 5);
+      // Pure white hyper-concentrated core
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(h + 18, h - 7, 3, 3);
+      ctx.fillRect(h + 18, h + 4, 3, 3);
+    });
+
+    // 7. QUAKE STOMP (Injakan Getar) - Seismic tectonic chest & belly plates
+    createLayer('mutation_quake_stomp_1', (ctx, h) => {
+      ctx.fillStyle = '#292524';
+      ctx.fillRect(h - 5, h - 3, 8, 6);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(h - 3, h - 1, 5, 1);
+    });
+
+    createLayer('mutation_quake_stomp_3', (ctx, h) => {
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(h - 7, h - 6, 12, 12);
+      // Molten fissures in chest
+      ctx.fillStyle = '#d97706';
+      ctx.fillRect(h - 5, h - 4, 8, 8);
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(h - 4, h - 2, 6, 4);
+    });
+
+    createLayer('mutation_quake_stomp_5', (ctx, h) => {
+      // Volcanic Seismic Core
+      ctx.fillStyle = '#0c0a09';
+      ctx.fillRect(h - 9, h - 8, 16, 16);
+      ctx.fillStyle = '#ea580c';
+      ctx.fillRect(h - 7, h - 6, 12, 12);
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(h - 5, h - 4, 8, 8);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(h - 2, h - 2, 3, 3);
+    });
+
+    // 8. SPIKED TAIL (Ekor Berduri) - Barbed tip and segment spikes
+    const createTailSpike = (key, drawFn) => {
+      if (scene.textures.exists(key)) return;
+      const c = scene.textures.createCanvas(key, 24, 24);
+      const cx = c.getContext('2d');
+      cx.imageSmoothingEnabled = false;
+      drawFn(cx, 12);
+      c.refresh();
+    };
+
+    createTailSpike('mutation_spiked_tail_1', (ctx, h) => {
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(h - 2, h - 8, 4, 16);
+      ctx.fillStyle = '#78716c';
+      ctx.fillRect(h - 1, h - 9, 2, 4);
+      ctx.fillRect(h - 1, h + 5, 2, 4);
+    });
+
+    createTailSpike('mutation_spiked_tail_3', (ctx, h) => {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(h - 4, h - 10, 8, 20);
+      // Heavy twin lateral blade spikes
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(h - 2, h - 11, 4, 3);
+      ctx.fillRect(h - 2, h + 8, 4, 3);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(h - 8, h - 2, 16, 4);
+    });
+
+    createTailSpike('mutation_spiked_tail_5', (ctx, h) => {
+      // Brutal spiked morningstar club
+      ctx.fillStyle = '#030712';
+      ctx.beginPath();
+      ctx.arc(h, h, 8, 0, Math.PI * 2);
+      ctx.fill();
+      // 8 razor obsidian spikes
+      ctx.fillStyle = '#fb923c';
+      ctx.fillRect(h - 2, h - 12, 4, 5);
+      ctx.fillRect(h - 2, h + 7, 4, 5);
+      ctx.fillRect(h - 12, h - 2, 5, 4);
+      ctx.fillRect(h + 7, h - 2, 5, 4);
+      ctx.fillRect(h - 9, h - 9, 3, 3);
+      ctx.fillRect(h + 6, h - 9, 3, 3);
+      ctx.fillRect(h - 9, h + 6, 3, 3);
+      ctx.fillRect(h + 6, h + 6, 3, 3);
+      // Core glowing amber crack
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(h - 2, h - 2, 4, 4);
+    });
+
+    // 9. ENERGY SHIELD BUBBLE (Perisai Energi) - 64x64 shimmering forcefield
+    if (!scene.textures.exists('energy_shield_bubble')) {
+      const shieldCanvas = scene.textures.createCanvas('energy_shield_bubble', 64, 64);
+      const sctx = shieldCanvas.getContext('2d');
+      sctx.imageSmoothingEnabled = false;
+
+      // Outer glow
+      sctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+      sctx.lineWidth = 2.5;
+      sctx.beginPath();
+      sctx.arc(32, 32, 29, 0, Math.PI * 2);
+      sctx.stroke();
+
+      // Hexagonal shield grid rings
+      sctx.strokeStyle = 'rgba(125, 211, 252, 0.7)';
+      sctx.lineWidth = 1.0;
+      sctx.stroke();
+
+      sctx.fillStyle = 'rgba(14, 165, 233, 0.12)';
+      sctx.fill();
+
+      // Shield spark facets
+      sctx.fillStyle = '#38bdf8';
+      sctx.fillRect(31, 2, 2, 2);
+      sctx.fillRect(31, 60, 2, 2);
+      sctx.fillRect(2, 31, 2, 2);
+      sctx.fillRect(60, 31, 2, 2);
+
+      shieldCanvas.refresh();
+    }
   }
 }
 

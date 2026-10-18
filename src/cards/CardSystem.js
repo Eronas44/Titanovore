@@ -30,6 +30,22 @@ export class CardSystem {
     // Passive perk levels (1-5)
     this.passiveLevels = new Map();
 
+    // Dynamic passive combat buffs (Tahap 4B-1)
+    this.vampirismHeal = 0;
+    this.vampirismVehicleHeal = 0;
+
+    this.bloodRageStacks = 0;
+    this.bloodRageTimer = 0;
+    this.bloodRageDmgPerStack = 0.04;
+    this.bloodRageMaxStacks = 5;
+    this.bloodRageDuration = 4.0;
+
+    this.citySprinterTimer = 0;
+    this.citySprinterSpeedBoost = 0;
+    this.citySprinterDuration = 2.5;
+    this.citySprinterHeal = 0;
+    this.citySprinterActive = false;
+
     // Rerolls remaining for this run
     this.rerollsRemaining = CARD_CONFIG.rerollsPerRun;
 
@@ -120,28 +136,41 @@ export class CardSystem {
       });
     }
 
-    // Select up to 3 distinct cards using roulette wheel selection
+    // Select up to 3 distinct cards using roulette wheel selection with role diversity
     const chosen = [];
     const pool = [...eligibleCards];
 
     for (let c = 0; c < 3; c++) {
       if (pool.length === 0) break;
 
+      // Filter candidates to prevent offering 3 cards with the exact same role
+      let candidates = pool;
+      if (chosen.length === 2 && chosen[0].card.role && chosen[0].card.role === chosen[1].card.role) {
+        const bannedRole = chosen[0].card.role;
+        const alternativePool = pool.filter(item => item.card.role !== bannedRole);
+        if (alternativePool.length > 0) {
+          candidates = alternativePool;
+        }
+      }
+
       let totalWeight = 0;
-      for (const item of pool) totalWeight += item.weight;
+      for (const item of candidates) totalWeight += item.weight;
 
       let r = Math.random() * totalWeight;
-      let selectedIdx = 0;
-      for (let i = 0; i < pool.length; i++) {
-        r -= pool[i].weight;
+      let selectedItem = candidates[0];
+      for (let i = 0; i < candidates.length; i++) {
+        r -= candidates[i].weight;
         if (r <= 0) {
-          selectedIdx = i;
+          selectedItem = candidates[i];
           break;
         }
       }
 
-      chosen.push(pool[selectedIdx]);
-      pool.splice(selectedIdx, 1);
+      chosen.push(selectedItem);
+      const poolIdx = pool.indexOf(selectedItem);
+      if (poolIdx !== -1) {
+        pool.splice(poolIdx, 1);
+      }
     }
 
     this.currentDisplayedCards = chosen;
@@ -190,13 +219,13 @@ export class CardSystem {
       } else if (card.passiveKey === 'magnet') {
         this.xpSystem.magnetRadiusBonus = effect.radiusBonus || 0;
       } else if (card.passiveKey === 'swiftStride') {
-        this.kaiju.speedMultiplier = effect.speedMultiplier || 1.15;
+        this.updateKaijuSpeed();
       } else if (card.passiveKey === 'colossus') {
         // Smoothly scale up Kaiju body & trample footprint
         const nextScale = 1.0 + (effect.scaleBonus || 0.15);
         this.kaiju.setKaijuScale(nextScale);
       } else if (card.passiveKey === 'carnage') {
-        this.weaponSystem.damageMultiplier = effect.damageMultiplier || 1.2;
+        this.updateBloodRageBonus();
       } else if (card.passiveKey === 'rapidFire') {
         this.weaponSystem.cooldownMultiplier = effect.cooldownMultiplier || 0.85;
       } else if (card.passiveKey === 'demolisher') {
@@ -204,7 +233,119 @@ export class CardSystem {
       } else if (card.passiveKey === 'thornShield') {
         this.weaponSystem.thornDamage = effect.thornDamage || 25;
         this.weaponSystem.thornRadius = effect.thornRadius || 45;
+      } else if (card.passiveKey === 'vampirism') {
+        this.vampirismHeal = effect.healPerKill || 1.5;
+        this.vampirismVehicleHeal = effect.vehicleHeal || 6.0;
+      } else if (card.passiveKey === 'bloodRage') {
+        this.bloodRageDmgPerStack = effect.dmgPerStack || 0.04;
+        this.bloodRageMaxStacks = effect.maxStacks || 5;
+        this.bloodRageDuration = effect.duration || 4.0;
+      } else if (card.passiveKey === 'deflector') {
+        if (this.kaiju) {
+          this.kaiju.reflectChance = effect.reflectChance || 0.18;
+          this.kaiju.reflectMultiplier = effect.reflectMult || 1.0;
+        }
+      } else if (card.passiveKey === 'energyShield') {
+        if (this.kaiju) {
+          this.kaiju.setEnergyShield(effect.shieldCapacity || 45, effect.rechargeDelay || 6.0);
+        }
+      } else if (card.passiveKey === 'scavenger') {
+        if (this.xpSystem) {
+          this.xpSystem.eliteXpMultiplier = effect.eliteXpMult || 1.35;
+        }
+      } else if (card.passiveKey === 'extendedReach') {
+        if (this.weaponSystem) {
+          this.weaponSystem.rangeMultiplier = effect.rangeMult || 1.16;
+        }
+      } else if (card.passiveKey === 'citySprinter') {
+        this.citySprinterSpeedBoost = effect.speedBoost || 0.20;
+        this.citySprinterDuration = effect.duration || 2.5;
+        this.citySprinterHeal = effect.healAmount || 0;
       }
+    }
+  }
+
+  /**
+   * Updates Kaiju movement speed based on Swift Stride and City Sprinter buffs
+   */
+  updateKaijuSpeed() {
+    let speedMult = 1.0;
+    const swiftLvl = this.passiveLevels.get('swiftStride') || 0;
+    if (swiftLvl > 0) {
+      const card = CARD_CONFIG.cards.find(c => c.passiveKey === 'swiftStride');
+      if (card && card.effects[swiftLvl - 1]) {
+        speedMult = card.effects[swiftLvl - 1].speedMultiplier || 1.15;
+      }
+    }
+
+    if (this.citySprinterActive) {
+      speedMult += (this.citySprinterSpeedBoost || 0.20);
+    }
+
+    if (this.kaiju) {
+      this.kaiju.speedMultiplier = speedMult;
+    }
+  }
+
+  /**
+   * Updates weapon system damage multiplier combining Carnage and Blood Rage stacks
+   */
+  updateBloodRageBonus() {
+    let carnageMult = 1.0;
+    const carnageLvl = this.passiveLevels.get('carnage') || 0;
+    if (carnageLvl > 0) {
+      const card = CARD_CONFIG.cards.find(c => c.passiveKey === 'carnage');
+      if (card && card.effects[carnageLvl - 1]) {
+        carnageMult = card.effects[carnageLvl - 1].damageMultiplier || 1.20;
+      }
+    }
+
+    const bloodRageBonus = this.bloodRageStacks * (this.bloodRageDmgPerStack || 0.04);
+    if (this.weaponSystem) {
+      this.weaponSystem.damageMultiplier = carnageMult * (1.0 + bloodRageBonus);
+    }
+  }
+
+  /**
+   * Handles enemy kill events for Vampirism and Blood Rage
+   * @param {number} eType 
+   * @param {number} ex 
+   * @param {number} ey 
+   */
+  handleEnemyKilled(eType, ex, ey) {
+    if (!this.kaiju || this.kaiju.isDead) return;
+
+    // 1. Vampirism / Regenerasi Agresif
+    const vampLvl = this.passiveLevels.get('vampirism') || 0;
+    if (vampLvl > 0) {
+      const isVehicle = (eType === 1 || eType === 3 || eType === 5); // POLICE_CAR, TANK, HELICOPTER
+      const heal = isVehicle ? (this.vampirismVehicleHeal || 6.0) : (this.vampirismHeal || 1.5);
+      this.kaiju.hp = Math.min(this.kaiju.maxHp, this.kaiju.hp + heal);
+    }
+
+    // 2. Blood Rage / Haus Darah
+    const rageLvl = this.passiveLevels.get('bloodRage') || 0;
+    if (rageLvl > 0) {
+      this.bloodRageStacks = Math.min(this.bloodRageMaxStacks || 5, this.bloodRageStacks + 1);
+      this.bloodRageTimer = this.bloodRageDuration || 4.0;
+      this.updateBloodRageBonus();
+    }
+  }
+
+  /**
+   * Handles building collapse event for City Sprinter / Pelari Kota
+   */
+  handleBuildingDestroyed() {
+    const sprintLvl = this.passiveLevels.get('citySprinter') || 0;
+    if (sprintLvl > 0) {
+      this.citySprinterActive = true;
+      this.citySprinterTimer = this.citySprinterDuration || 2.5;
+
+      if (this.citySprinterHeal > 0 && this.kaiju && !this.kaiju.isDead) {
+        this.kaiju.hp = Math.min(this.kaiju.maxHp, this.kaiju.hp + this.citySprinterHeal);
+      }
+
+      this.updateKaijuSpeed();
     }
   }
 
@@ -252,7 +393,7 @@ export class CardSystem {
   }
 
   /**
-   * Per-frame update for active passives like Regeneration
+   * Per-frame update for active passives like Regeneration, Blood Rage, and City Sprinter
    * @param {number} dt 
    */
   update(dt) {
@@ -260,11 +401,29 @@ export class CardSystem {
 
     // Passive: Regeneration
     const regenLevel = this.passiveLevels.get('regeneration') || 0;
-    if (regenLevel > 0 && this.kaiju.hp < this.kaiju.maxHp) {
+    if (regenLevel > 0 && this.kaiju && this.kaiju.hp < this.kaiju.maxHp) {
       const card = CARD_CONFIG.cards.find(c => c.id === 'regenerasi');
       if (card) {
         const hpPerSec = card.effects[regenLevel - 1].hpPerSec;
         this.kaiju.hp = Math.min(this.kaiju.maxHp, this.kaiju.hp + hpPerSec * dt);
+      }
+    }
+
+    // Passive: Blood Rage decay
+    if (this.bloodRageTimer > 0) {
+      this.bloodRageTimer -= dt;
+      if (this.bloodRageTimer <= 0) {
+        this.bloodRageStacks = 0;
+        this.updateBloodRageBonus();
+      }
+    }
+
+    // Passive: City Sprinter decay
+    if (this.citySprinterTimer > 0) {
+      this.citySprinterTimer -= dt;
+      if (this.citySprinterTimer <= 0) {
+        this.citySprinterActive = false;
+        this.updateKaijuSpeed();
       }
     }
   }
@@ -278,8 +437,23 @@ export class CardSystem {
     this.levelUpQueue = [];
     this.closeModal();
 
+    this.bloodRageStacks = 0;
+    this.bloodRageTimer = 0;
+    this.citySprinterTimer = 0;
+    this.citySprinterActive = false;
+
     if (this.kaiju) {
       this.kaiju.speedMultiplier = 1.0;
+      this.kaiju.reflectChance = 0;
+      this.kaiju.reflectMultiplier = 1.0;
+      this.kaiju.setEnergyShield(0);
+    }
+    if (this.weaponSystem) {
+      this.weaponSystem.rangeMultiplier = 1.0;
+      this.weaponSystem.damageMultiplier = 1.0;
+    }
+    if (this.xpSystem) {
+      this.xpSystem.eliteXpMultiplier = 1.0;
     }
   }
 

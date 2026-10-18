@@ -676,6 +676,27 @@
   border: 1px solid currentColor;
 }
 
+.card-mutation-badge {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid #10b981;
+  color: #34d399;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.card-mutation-badge svg {
+  width: 10px;
+  height: 10px;
+}
+
 .card-hotkey-badge {
   font-family: var(--font-mono);
   font-size: 11px;
