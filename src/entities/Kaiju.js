@@ -148,9 +148,14 @@ export class Kaiju {
    * @param {string} layerKey - Phaser texture key
    */
   addLayer(slotName, layerKey) {
-    if (!this.config.slots.includes(slotName)) {
-      console.warn(`[Kaiju] Invalid slot: ${slotName}. Allowed slots:`, this.config.slots);
-      return;
+    if (!this.config || !this.config.slots || !this.config.slots.includes(slotName)) {
+      console.warn(`[Kaiju] Invalid slot: ${slotName}. Allowed slots:`, this.config ? this.config.slots : []);
+      return null;
+    }
+
+    if (!this.scene || !this.scene.textures || !this.scene.textures.exists(layerKey)) {
+      console.warn(`[Kaiju] Texture does not exist for layer: ${layerKey}`);
+      return null;
     }
 
     // Remove old layer in this slot if present
@@ -161,7 +166,7 @@ export class Kaiju {
     sprite.setOrigin(0.5, 0.5);
 
     // Adjust stacking order inside container
-    // 'body' at bottom, 'back_slot' middle, 'skin_overlay' top
+    // 'body' at bottom, other slots layered on top
     if (slotName === 'body') {
       this.container.addAt(sprite, 0);
     } else {
@@ -172,6 +177,8 @@ export class Kaiju {
       sprite,
       key: layerKey
     });
+
+    return sprite;
   }
 
   /**
@@ -181,9 +188,13 @@ export class Kaiju {
   removeLayer(slotName) {
     if (this.layers.has(slotName)) {
       const entry = this.layers.get(slotName);
-      if (entry.sprite) {
-        this.container.remove(entry.sprite);
-        entry.sprite.destroy();
+      if (entry && entry.sprite) {
+        if (this.container && typeof this.container.remove === 'function') {
+          this.container.remove(entry.sprite);
+        }
+        if (typeof entry.sprite.destroy === 'function') {
+          entry.sprite.destroy();
+        }
       }
       this.layers.delete(slotName);
     }
@@ -235,17 +246,45 @@ export class Kaiju {
       return;
     }
 
+    const slotMap = {
+      claw: 'body',
+      back_cannon: 'back_slot',
+      back_rockets: 'back_slot',
+      electric_skin: 'skin_overlay',
+      body_spikes: 'skin_overlay',
+      fire_breath: 'head_slot',
+      laser_eyes: 'head_slot',
+      quake_stomp: 'body',
+      spiked_tail: 'tail_slot'
+    };
+    const slot = slotMap[weaponId] || 'back_slot';
+
     const texKey = `mutation_${weaponId}_${tier}`;
-    if (this.scene.textures.exists(texKey)) {
-      if (this.mutationSprites.has(weaponId)) {
-        const sprite = this.mutationSprites.get(weaponId);
+    if (!this.scene || !this.scene.textures || !this.scene.textures.exists(texKey)) {
+      console.warn(`[Kaiju] Mutation texture "${texKey}" not yet created, skipping layer attachment.`);
+      return;
+    }
+
+    if (this.mutationSprites.has(weaponId)) {
+      const sprite = this.mutationSprites.get(weaponId);
+      if (sprite && sprite.active) {
         sprite.setTexture(texKey);
-      } else {
-        const sprite = this.scene.add.sprite(0, 0, texKey);
-        sprite.setOrigin(0.5, 0.5);
-        this.container.add(sprite);
-        this.mutationSprites.set(weaponId, sprite);
       }
+    } else {
+      const sprite = this.scene.add.sprite(0, 0, texKey);
+      sprite.setOrigin(0.5, 0.5);
+      if (slot === 'body') {
+        this.container.addAt(sprite, 0);
+      } else {
+        this.container.add(sprite);
+      }
+      this.mutationSprites.set(weaponId, sprite);
+    }
+
+    // Keep slot map updated
+    const finalSprite = this.mutationSprites.get(weaponId);
+    if (finalSprite) {
+      this.layers.set(slot, { sprite: finalSprite, key: texKey });
     }
   }
 
@@ -386,6 +425,14 @@ export class Kaiju {
           item.sprite.setRotation(seg.angle);
         }
       });
+    }
+
+    // Subtle breathing / pulse effect for active mutation layers
+    const mutationPulse = 1.0 + Math.sin(time * 0.005) * 0.035;
+    for (const sprite of this.mutationSprites.values()) {
+      if (sprite && sprite.active) {
+        sprite.setScale(mutationPulse);
+      }
     }
 
     // Energy Shield rotation & recharge timer

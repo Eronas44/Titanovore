@@ -50,6 +50,12 @@ export class WeaponSystem {
     this.projColor = new Uint32Array(this.maxProjectiles);
     this.projIsRocket = new Uint8Array(this.maxProjectiles);
     this.projBlastRadius = new Float32Array(this.maxProjectiles);
+    this.projTargetIdx = new Int16Array(this.maxProjectiles);
+    this.projTargetId = new Uint32Array(this.maxProjectiles);
+    this.projLastTargetX = new Float32Array(this.maxProjectiles);
+    this.projLastTargetY = new Float32Array(this.maxProjectiles);
+    this.projHasLastTarget = new Uint8Array(this.maxProjectiles);
+    this.projTargetIdx.fill(-1);
 
     this.freeProjIndices = [];
     for (let i = this.maxProjectiles - 1; i >= 0; i--) {
@@ -141,7 +147,20 @@ export class WeaponSystem {
   /**
    * Spawns a Kaiju projectile.
    */
-  spawnProjectile(x, y, vx, vy, damage, canHitAir, canHitGround, buildingMult, color = 0x38bdf8, life = 0.7, isRocket = false, blastRadius = 0) {
+  spawnProjectile(
+    x, y, vx, vy,
+    damage,
+    canHitAir, canHitGround,
+    buildingMult,
+    color = 0x38bdf8,
+    life = 0.7,
+    isRocket = false,
+    blastRadius = 0,
+    targetIdx = -1,
+    targetId = 0,
+    targetX = 0,
+    targetY = 0
+  ) {
     if (this.freeProjIndices.length === 0) return -1;
     const idx = this.freeProjIndices.pop();
 
@@ -158,6 +177,11 @@ export class WeaponSystem {
     this.projLife[idx] = life;
     this.projIsRocket[idx] = isRocket ? 1 : 0;
     this.projBlastRadius[idx] = blastRadius;
+    this.projTargetIdx[idx] = targetIdx;
+    this.projTargetId[idx] = targetId;
+    this.projLastTargetX[idx] = targetX;
+    this.projLastTargetY[idx] = targetY;
+    this.projHasLastTarget[idx] = (targetIdx >= 0 || targetX !== 0 || targetY !== 0) ? 1 : 0;
     this.activeProjCount++;
 
     return idx;
@@ -169,6 +193,9 @@ export class WeaponSystem {
   despawnProjectile(idx) {
     if (!this.projActive[idx]) return;
     this.projActive[idx] = 0;
+    this.projTargetIdx[idx] = -1;
+    this.projTargetId[idx] = 0;
+    this.projHasLastTarget[idx] = 0;
     this.freeProjIndices.push(idx);
     this.activeProjCount = Math.max(0, this.activeProjCount - 1);
   }
@@ -180,91 +207,107 @@ export class WeaponSystem {
   update(dt) {
     this.attackGraphics.clear();
 
-    // 1. Update active weapons
+    // 1. Update active weapons safely per-weapon
     for (const [id, entry] of this.equippedWeapons.entries()) {
-      const wDef = WEAPON_CONFIG.weapons[id];
-      if (!wDef) continue;
+      try {
+        const wDef = WEAPON_CONFIG.weapons[id];
+        if (!wDef) continue;
 
-      const lvlData = wDef.levels[entry.level - 1] || wDef.levels[0];
-      const effectiveCooldown = lvlData.cooldown * this.cooldownMultiplier;
+        const lvlData = wDef.levels[entry.level - 1] || wDef.levels[0];
+        const effectiveCooldown = (lvlData.cooldown || 1.0) * this.cooldownMultiplier;
 
-      // Handle Claw Double Swipe delay
-      if (entry.doubleSwipePending) {
-        entry.doubleSwipeTimer -= dt;
-        if (entry.doubleSwipeTimer <= 0) {
-          entry.doubleSwipePending = false;
-          this.executeClawAttack(lvlData, true);
+        // Handle Claw Double Swipe delay
+        if (entry.doubleSwipePending) {
+          entry.doubleSwipeTimer -= dt;
+          if (entry.doubleSwipeTimer <= 0) {
+            entry.doubleSwipePending = false;
+            this.executeClawAttack(lvlData, true);
+          }
         }
-      }
 
-      // Handle Quake Stomp Double Quake delay
-      if (entry.secondQuakePending) {
-        entry.secondQuakeTimer -= dt;
-        if (entry.secondQuakeTimer <= 0) {
-          entry.secondQuakePending = false;
-          this.executeQuakeStomp(lvlData, true);
+        // Handle Quake Stomp Double Quake delay
+        if (entry.secondQuakePending) {
+          entry.secondQuakeTimer -= dt;
+          if (entry.secondQuakeTimer <= 0) {
+            entry.secondQuakePending = false;
+            this.executeQuakeStomp(lvlData, true);
+          }
         }
-      }
 
-      // Handle Channeled continuous weapons (Fire Breath & Laser Eyes)
-      if (id === 'fire_breath') {
-        this.updateFireBreath(entry, lvlData, dt, effectiveCooldown);
-        continue;
-      }
-
-      if (id === 'laser_eyes') {
-        this.updateLaserEyes(entry, lvlData, dt, effectiveCooldown);
-        continue;
-      }
-
-      // Discrete trigger weapons
-      entry.timer -= dt;
-      if (entry.timer <= 0) {
-        entry.timer = effectiveCooldown;
-
-        switch (id) {
-          case 'claw':
-            this.executeClawAttack(lvlData, false);
-            if (lvlData.isDoubleSwipe) {
-              entry.doubleSwipePending = true;
-              entry.doubleSwipeTimer = lvlData.doubleSwipeDelay || 0.12;
-            }
-            break;
-          case 'back_cannon':
-            this.executeBackCannonAttack(lvlData);
-            break;
-          case 'electric_skin':
-            this.executeElectricSkinAttack(lvlData);
-            break;
-          case 'spiked_tail':
-            this.executeSpikedTailAttack(lvlData);
-            break;
-          case 'body_spikes':
-            this.executeBodySpikesPassive(lvlData);
-            break;
-          case 'back_rockets':
-            this.executeBackRocketsAttack(lvlData);
-            break;
-          case 'quake_stomp':
-            this.executeQuakeStomp(lvlData, false);
-            if (lvlData.isDoubleQuake) {
-              entry.secondQuakePending = true;
-              entry.secondQuakeTimer = lvlData.quakeDelay || 0.35;
-            }
-            break;
+        // Handle Channeled continuous weapons (Fire Breath & Laser Eyes)
+        if (id === 'fire_breath') {
+          this.updateFireBreath(entry, lvlData, dt, effectiveCooldown);
+          continue;
         }
+
+        if (id === 'laser_eyes') {
+          this.updateLaserEyes(entry, lvlData, dt, effectiveCooldown);
+          continue;
+        }
+
+        // Discrete trigger weapons
+        entry.timer -= dt;
+        if (entry.timer <= 0) {
+          entry.timer = effectiveCooldown;
+
+          switch (id) {
+            case 'claw':
+              this.executeClawAttack(lvlData, false);
+              if (lvlData.isDoubleSwipe) {
+                entry.doubleSwipePending = true;
+                entry.doubleSwipeTimer = lvlData.doubleSwipeDelay || 0.12;
+              }
+              break;
+            case 'back_cannon':
+              this.executeBackCannonAttack(lvlData);
+              break;
+            case 'electric_skin':
+              this.executeElectricSkinAttack(lvlData);
+              break;
+            case 'spiked_tail':
+              this.executeSpikedTailAttack(lvlData);
+              break;
+            case 'body_spikes':
+              this.executeBodySpikesPassive(lvlData);
+              break;
+            case 'back_rockets':
+              this.executeBackRocketsAttack(lvlData);
+              break;
+            case 'quake_stomp':
+              this.executeQuakeStomp(lvlData, false);
+              if (lvlData.isDoubleQuake) {
+                entry.secondQuakePending = true;
+                entry.secondQuakeTimer = lvlData.quakeDelay || 0.35;
+              }
+              break;
+          }
+        }
+      } catch (err) {
+        console.error(`[WeaponSystem] Error executing weapon "${id}":`, err);
       }
     }
 
-    // 2. Update Burning Cells & Lingering Fire
-    this.updateBurningCells(dt);
-    this.updateFirePools(dt);
+    // 2. Update Burning Cells & Lingering Fire safely
+    try {
+      this.updateBurningCells(dt);
+      this.updateFirePools(dt);
+    } catch (e) {
+      console.error('[WeaponSystem] Error updating fire effects:', e);
+    }
 
-    // 3. Render and age transient visual effects
-    this.updateVisualEffects(dt);
+    // 3. Render and age transient visual effects safely
+    try {
+      this.updateVisualEffects(dt);
+    } catch (e) {
+      console.error('[WeaponSystem] Error updating visual effects:', e);
+    }
 
-    // 4. Update Kaiju projectiles
-    this.updateProjectiles(dt);
+    // 4. Update Kaiju projectiles safely
+    try {
+      this.updateProjectiles(dt);
+    } catch (e) {
+      console.error('[WeaponSystem] Error updating projectiles:', e);
+    }
   }
 
   // =========================================================================
@@ -685,30 +728,72 @@ export class WeaponSystem {
   // 7. BACK ROCKETS (Roket Punggung)
   // =========================================================================
   executeBackRocketsAttack(lvlData) {
+    if (!this.kaiju) return;
     const kx = this.kaiju.x;
     const ky = this.kaiju.y;
-    const range = lvlData.range * this.rangeMultiplier;
+    const range = (lvlData.range || 240) * this.rangeMultiplier;
     const count = lvlData.rocketCount || 2;
-    const damage = lvlData.damage;
+    const damage = lvlData.damage || 45;
     const blast = lvlData.blastRadius || 30;
 
-    // Target nearest air or ground target
-    const nearest = this.enemyManager.getNearestEnemyInRadius(kx, ky, range);
-    let targetAngle = this.kaiju.rotation;
-    if (nearest) {
-      targetAngle = Math.atan2(nearest.y - ky, nearest.x - kx);
+    // Search nearest enemy target safely (ground or air)
+    let targetIdx = -1;
+    let targetId = 0;
+    let targetX = 0;
+    let targetY = 0;
+    let targetAngle = this.kaiju.rotation || 0;
+
+    if (this.enemyManager && typeof this.enemyManager.getNearestEnemy === 'function') {
+      const nearest = this.enemyManager.getNearestEnemy(kx, ky, range);
+      if (nearest) {
+        const dx = nearest.x - kx;
+        const dy = nearest.y - ky;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 0.001 && !isNaN(dx) && !isNaN(dy)) {
+          targetAngle = Math.atan2(dy, dx);
+          targetIdx = nearest.idx;
+          targetId = nearest.id;
+          targetX = nearest.x;
+          targetY = nearest.y;
+        }
+      }
+    }
+
+    if (isNaN(targetAngle)) {
+      targetAngle = this.kaiju.rotation || 0;
+    }
+
+    if (targetIdx === -1) {
+      // No target in range: set straight line forward point
+      targetX = kx + Math.cos(targetAngle) * range;
+      targetY = ky + Math.sin(targetAngle) * range;
     }
 
     for (let i = 0; i < count; i++) {
+      if (this.freeProjIndices.length === 0) break; // Pool full guard
+
       // Salvo spread angle
-      const spread = (i - (count - 1) / 2) * 0.35;
+      const spread = count > 1 ? (i - (count - 1) / 2) * 0.28 : 0;
       const angle = targetAngle + spread;
-      const speed = 260 + (i % 2) * 20;
+      const speed = 250 + (i % 2) * 20;
       const vx = Math.cos(angle) * speed;
       const vy = Math.sin(angle) * speed;
 
-      // Spawn homing rocket
-      this.spawnProjectile(kx, ky, vx, vy, damage, true, true, 3.0, 0xf97316, 1.1, true, blast);
+      // Spawn homing rocket (hits air & ground, AOE blast)
+      this.spawnProjectile(
+        kx, ky, vx, vy,
+        damage,
+        true, true,
+        3.0,
+        0xf97316,
+        1.4,
+        true,
+        blast,
+        targetIdx,
+        targetId,
+        targetX,
+        targetY
+      );
     }
   }
 
@@ -973,20 +1058,70 @@ export class WeaponSystem {
 
       // Homing behavior for rockets
       if (this.projIsRocket[i]) {
-        const nearest = this.enemyManager.getNearestEnemyInRadius(px, py, 180);
-        if (nearest) {
-          const targetAngle = Math.atan2(nearest.y - py, nearest.x - px);
-          const curAngle = Math.atan2(this.projVy[i], this.projVx[i]);
-          const angleDiff = Phaser.Math.Angle.Wrap(targetAngle - curAngle);
-          const steerSpeed = 6.0 * dt;
-          const newAngle = curAngle + Phaser.Math.Clamp(angleDiff, -steerSpeed, steerSpeed);
-          const speed = Math.sqrt(this.projVx[i] * this.projVx[i] + this.projVy[i] * this.projVy[i]);
-          this.projVx[i] = Math.cos(newAngle) * speed;
-          this.projVy[i] = Math.sin(newAngle) * speed;
+        let hasTarget = false;
+        let tx = 0;
+        let ty = 0;
+        const tIdx = this.projTargetIdx[i];
+        const tId = this.projTargetId[i];
+
+        if (tIdx >= 0 && this.enemyManager && typeof this.enemyManager.isTargetValid === 'function' && this.enemyManager.isTargetValid(tIdx, tId)) {
+          tx = this.enemyManager.x[tIdx];
+          ty = this.enemyManager.y[tIdx];
+          this.projLastTargetX[i] = tx;
+          this.projLastTargetY[i] = ty;
+          this.projHasLastTarget[i] = 1;
+          hasTarget = true;
+        } else {
+          // Target died or slot recycled! Retarget nearest active enemy within 220px
+          let retarget = null;
+          if (this.enemyManager && typeof this.enemyManager.getNearestEnemy === 'function') {
+            retarget = this.enemyManager.getNearestEnemy(px, py, 220);
+          }
+          if (retarget) {
+            this.projTargetIdx[i] = retarget.idx;
+            this.projTargetId[i] = retarget.id;
+            tx = retarget.x;
+            ty = retarget.y;
+            this.projLastTargetX[i] = tx;
+            this.projLastTargetY[i] = ty;
+            this.projHasLastTarget[i] = 1;
+            hasTarget = true;
+          } else if (this.projHasLastTarget[i]) {
+            // Fly straight to last recorded target position, then detonate
+            tx = this.projLastTargetX[i];
+            ty = this.projLastTargetY[i];
+            const distToLast = Math.hypot(tx - px, ty - py);
+            if (distToLast <= 18) {
+              this.explodeRocket(px, py, this.projDamage[i], this.projBlastRadius[i]);
+              this.despawnProjectile(i);
+              continue;
+            }
+            hasTarget = true;
+          }
+        }
+
+        if (hasTarget) {
+          const toTx = tx - px;
+          const toTy = ty - py;
+          const distToT = Math.hypot(toTx, toTy);
+          if (distToT > 1.0 && !isNaN(distToT)) {
+            const targetAngle = Math.atan2(toTy, toTx);
+            const curVx = this.projVx[i];
+            const curVy = this.projVy[i];
+            const curSpeed = Math.hypot(curVx, curVy);
+            const safeSpeed = (curSpeed > 10 && !isNaN(curSpeed)) ? curSpeed : 260;
+            const curAngle = Math.atan2(curVy, curVx);
+            const angleDiff = Phaser.Math.Angle.Wrap(targetAngle - curAngle);
+            const maxSteer = 6.5 * dt;
+            const steer = Math.min(Math.abs(angleDiff), maxSteer) * Math.sign(angleDiff);
+            const newAngle = curAngle + steer;
+            this.projVx[i] = Math.cos(newAngle) * safeSpeed;
+            this.projVy[i] = Math.sin(newAngle) * safeSpeed;
+          }
         }
 
         // Rocket smoke puff
-        if (Math.random() < 0.3 && this.particleManager) {
+        if (Math.random() < 0.35 && this.particleManager && typeof this.particleManager.emitDust === 'function') {
           this.particleManager.emitDust(px, py, 1, 0.4);
         }
       }
@@ -1000,21 +1135,25 @@ export class WeaponSystem {
 
       // Enemy hit test
       let hit = false;
-      this.enemyManager.queryEnemiesInRadius(this.projX[i], this.projY[i], 16, (enemyIdx) => {
-        if (hit || !this.enemyManager.active[enemyIdx]) return;
-        const isAir = this.enemyManager.isAir[enemyIdx] === 1;
-        if ((isAir && canAir) || (!isAir && canGround)) {
-          hit = true;
+      if (this.enemyManager && typeof this.enemyManager.queryEnemiesInRadius === 'function') {
+        this.enemyManager.queryEnemiesInRadius(this.projX[i], this.projY[i], 16, (enemyIdx) => {
+          if (hit || !this.enemyManager.active[enemyIdx]) return;
+          const isAir = this.enemyManager.isAir[enemyIdx] === 1;
+          if ((isAir && canAir) || (!isAir && canGround)) {
+            hit = true;
 
-          if (this.projIsRocket[i]) {
-            // AOE Blast
-            this.explodeRocket(this.projX[i], this.projY[i], damage, this.projBlastRadius[i]);
-          } else {
-            this.enemyManager.damageEnemy(enemyIdx, damage, canAir);
-            this.particleManager.emitDebris(this.projX[i], this.projY[i], this.projColor[i], 3, 30);
+            if (this.projIsRocket[i]) {
+              // AOE Blast
+              this.explodeRocket(this.projX[i], this.projY[i], damage, this.projBlastRadius[i]);
+            } else {
+              this.enemyManager.damageEnemy(enemyIdx, damage, canAir);
+              if (this.particleManager && typeof this.particleManager.emitDebris === 'function') {
+                this.particleManager.emitDebris(this.projX[i], this.projY[i], this.projColor[i], 3, 30);
+              }
+            }
           }
-        }
-      });
+        });
+      }
 
       if (hit) {
         this.despawnProjectile(i);
@@ -1022,21 +1161,23 @@ export class WeaponSystem {
       }
 
       // Building hit test
-      const col = Math.floor(this.projX[i] / cg.cellSize);
-      const row = Math.floor(this.projY[i] / cg.cellSize);
-      if (col >= 0 && col < cg.cols && row >= 0 && row < cg.rows) {
-        const cellIdx = row * cg.cols + col;
-        if (cg.types[cellIdx] >= CELL_TYPES.RESIDENTIAL_LOW && cg.types[cellIdx] <= CELL_TYPES.LANDMARK && cg.hp[cellIdx] > 0) {
-          if (this.projIsRocket[i]) {
-            this.explodeRocket(this.projX[i], this.projY[i], damage, this.projBlastRadius[i]);
-          } else {
-            const res = cg.damageCell(col, row, damage * this.projBuildingMult[i] * 0.25);
-            if (res && res.destroyed && this.scene.onCellDestroyed) {
-              this.scene.onCellDestroyed({ col, row, worldX: this.projX[i], worldY: this.projY[i] }, res.building, false);
+      if (cg) {
+        const col = Math.floor(this.projX[i] / cg.cellSize);
+        const row = Math.floor(this.projY[i] / cg.cellSize);
+        if (col >= 0 && col < cg.cols && row >= 0 && row < cg.rows) {
+          const cellIdx = row * cg.cols + col;
+          if (cg.types[cellIdx] >= CELL_TYPES.RESIDENTIAL_LOW && cg.types[cellIdx] <= CELL_TYPES.LANDMARK && cg.hp[cellIdx] > 0) {
+            if (this.projIsRocket[i]) {
+              this.explodeRocket(this.projX[i], this.projY[i], damage, this.projBlastRadius[i]);
+            } else {
+              const res = cg.damageCell(col, row, damage * this.projBuildingMult[i] * 0.25);
+              if (res && res.destroyed && this.scene && typeof this.scene.onCellDestroyed === 'function') {
+                this.scene.onCellDestroyed({ col, row, worldX: this.projX[i], worldY: this.projY[i] }, res.building, false);
+              }
             }
+            this.despawnProjectile(i);
+            continue;
           }
-          this.despawnProjectile(i);
-          continue;
         }
       }
 
@@ -1054,41 +1195,67 @@ export class WeaponSystem {
   }
 
   explodeRocket(x, y, damage, blastRadius) {
-    const cg = this.cityGrid;
     const r = blastRadius || 30;
 
-    // AOE damage to enemies
-    this.enemyManager.queryEnemiesInRadius(x, y, r, (idx) => {
-      if (!this.enemyManager.active[idx]) return;
-      this.enemyManager.damageEnemy(idx, damage, true);
-    });
+    // 1. Safe AOE damage to enemies (hits ground and air)
+    if (this.enemyManager && typeof this.enemyManager.queryEnemiesInRadius === 'function') {
+      this.enemyManager.queryEnemiesInRadius(x, y, r, (idx) => {
+        if (!this.enemyManager.active[idx]) return;
+        if (typeof this.enemyManager.damageEnemy === 'function') {
+          this.enemyManager.damageEnemy(idx, damage, true);
+        }
+      });
+    }
 
-    // Flatten building cells in blast radius
-    const cellRadius = Math.ceil(r / cg.cellSize);
-    const centerCol = Math.floor(x / cg.cellSize);
-    const centerRow = Math.floor(y / cg.cellSize);
+    // 2. Safe Flatten building cells in blast radius (with boundary checks)
+    if (this.cityGrid) {
+      const cg = this.cityGrid;
+      const cellSize = cg.cellSize || 4;
+      const cellRadius = Math.ceil(r / cellSize);
+      const centerCol = Math.floor(x / cellSize);
+      const centerRow = Math.floor(y / cellSize);
+      const minCol = Math.max(0, centerCol - cellRadius);
+      const maxCol = Math.min(cg.cols - 1, centerCol + cellRadius);
+      const minRow = Math.max(0, centerRow - cellRadius);
+      const maxRow = Math.min(cg.rows - 1, centerRow + cellRadius);
+      const r2 = r * r;
+      const cellDmg = damage * 0.35;
 
-    for (let dy = -cellRadius; dy <= cellRadius; dy++) {
-      for (let dx = -cellRadius; dx <= cellRadius; dx++) {
-        const c = centerCol + dx;
-        const rw = centerRow + dy;
-        if (c < 0 || c >= cg.cols || rw < 0 || rw >= cg.rows) continue;
-        const cx = c * cg.cellSize + cg.cellSize / 2;
-        const cy = rw * cg.cellSize + cg.cellSize / 2;
-        if ((cx - x) * (cx - x) + (cy - y) * (cy - y) <= r * r) {
-          const res = cg.damageCell(c, rw, damage * 0.35);
-          if (res && res.destroyed && this.scene.onCellDestroyed) {
-            this.scene.onCellDestroyed({ col: c, row: rw, worldX: cx, worldY: cy }, res.building, false);
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) {
+          const cellIdx = row * cg.cols + col;
+          if (cellIdx < 0 || cellIdx >= cg.totalCells) continue;
+          if (cg.types[cellIdx] < CELL_TYPES.RESIDENTIAL_LOW || cg.types[cellIdx] > CELL_TYPES.LANDMARK) continue;
+          if (cg.hp[cellIdx] <= 0) continue;
+
+          const cx = col * cellSize + cellSize / 2;
+          const cy = row * cellSize + cellSize / 2;
+          const distSq = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+          if (distSq <= r2) {
+            const res = cg.damageCell(col, row, cellDmg);
+            if (res && res.destroyed && this.scene && typeof this.scene.onCellDestroyed === 'function') {
+              this.scene.onCellDestroyed({ col, row, worldX: cx, worldY: cy }, res.building, false);
+            }
           }
         }
       }
     }
 
-    // Explosion visual & shockwave
+    // 3. Explosion visual & shockwave
     if (this.particleManager) {
-      this.particleManager.emitCollapseFlash(x, y, r * 0.7);
-      this.particleManager.emitDebris(x, y, 0xf97316, 8, 50);
+      if (typeof this.particleManager.emitCollapseFlash === 'function') {
+        this.particleManager.emitCollapseFlash(x, y, Math.min(r * 0.8, 35));
+      }
+      if (typeof this.particleManager.emitDebris === 'function') {
+        this.particleManager.emitDebris(x, y, 0xf97316, 8, 55);
+      }
     }
+
+    // Safe optional audio hook
+    if (this.scene && this.scene.audioManager && typeof this.scene.audioManager.play === 'function') {
+      try { this.scene.audioManager.play('rocket_explosion'); } catch (_) {}
+    }
+
     this.visualEffects.push({
       type: 'shockwave',
       x,
@@ -1113,6 +1280,9 @@ export class WeaponSystem {
 
     for (let i = 0; i < this.maxProjectiles; i++) {
       this.projActive[i] = 0;
+      this.projTargetIdx[i] = -1;
+      this.projTargetId[i] = 0;
+      this.projHasLastTarget[i] = 0;
     }
     this.freeProjIndices = [];
     for (let i = this.maxProjectiles - 1; i >= 0; i--) {

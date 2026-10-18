@@ -60,6 +60,7 @@ export class EnemyManager {
     this.rotation = new Float32Array(this.maxEnemies);
     this.active = new Uint8Array(this.maxEnemies);
     this.subType = new Uint8Array(this.maxEnemies); // visual variation / rotor frames
+    this.generation = new Uint32Array(this.maxEnemies); // generation ID for robust homing locking
 
     // Specialized SoA properties for military squads & airborne units
     this.targetX = new Float32Array(this.maxEnemies); // heli orbit angle / drone target X / soldier offset X
@@ -176,12 +177,62 @@ export class EnemyManager {
   }
 
   /**
+   * Finds the nearest active enemy within radius.
+   * Returns { idx, id, x, y, dist, isAir, type } or null if none found.
+   */
+  getNearestEnemy(x, y, maxRadius = 300, filterFn = null) {
+    let nearestIdx = -1;
+    let nearestDistSq = maxRadius * maxRadius;
+
+    this.queryEnemiesInRadius(x, y, maxRadius, (idx, dx, dy, d2) => {
+      if (!this.active[idx]) return;
+      if (this.hp[idx] <= 0) return;
+      if (filterFn && !filterFn(idx, this)) return;
+      if (d2 < nearestDistSq) {
+        nearestDistSq = d2;
+        nearestIdx = idx;
+      }
+    });
+
+    if (nearestIdx === -1) return null;
+
+    return {
+      idx: nearestIdx,
+      id: this.generation[nearestIdx],
+      x: this.x[nearestIdx],
+      y: this.y[nearestIdx],
+      dist: Math.sqrt(nearestDistSq),
+      isAir: this.isAir[nearestIdx] === 1,
+      type: this.type[nearestIdx]
+    };
+  }
+
+  /**
+   * Alias for backwards compatibility
+   */
+  getNearestEnemyInRadius(x, y, maxRadius = 300) {
+    return this.getNearestEnemy(x, y, maxRadius);
+  }
+
+  /**
+   * Checks if an enemy target is still valid (alive and same generation).
+   */
+  isTargetValid(idx, id) {
+    if (idx < 0 || idx >= this.maxEnemies) return false;
+    if (this.active[idx] !== 1) return false;
+    if (this.hp[idx] <= 0) return false;
+    if (id !== undefined && id !== null && this.generation[idx] !== id) return false;
+    return true;
+  }
+
+  /**
    * Allocates an enemy slot and initializes properties.
    */
   spawnEnemy(type, x, y, rotation = 0) {
     if (this.freeIndices.length === 0) return -1;
     const idx = this.freeIndices.pop();
 
+    this.generation[idx] = (this.generation[idx] + 1) >>> 0;
     this.active[idx] = 1;
     this.type[idx] = type;
     this.x[idx] = x;
