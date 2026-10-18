@@ -1,109 +1,107 @@
-# Titanovore - Tahap 1 (Fondasi)
+# Titanovore - Tahap 2B (Penghancuran Gedung & Fisika Kerusakan)
 
-Game browser 2D top-down (pandangan atas) menggunakan Phaser 3 + Vite. Menampilkan monster raksasa (Kaiju) dengan arsitektur layer modular, pergerakan dengan inersia berat, ekor bersambung dengan kinematika lentur, kota prosedural berbasis chunk canvas texture, dan simulasi pejalan kaki & kendaraan hiasan pada 60 FPS.
+Game browser 2D top-down (pandangan atas) menggunakan Phaser 3 + Vite. Tahap 2B mengimplementasikan sistem penghancuran dinamis saat Kaiju melangkah dan menyapu ekornya melintasi gedung-gedung kota, gelombang keruntuhan bangunan, hambatan inersia bobot (*slowdown*), partikel puing & debu, manusia panik melarikan diri, mobil penyok, serta HUD telemetri kehancuran pada 60 FPS stabil.
 
 ---
 
-## Cara Menjalankan
+## Yang Baru di Tahap 2B
 
-1. Pastikan Node.js sudah terpasang.
-2. Buka terminal di folder proyek:
-   ```bash
-   npm install
-   ```
-3. Jalankan development server:
-   ```bash
-   npm run dev
-   ```
-4. Buka browser pada URL yang muncul di terminal (biasanya `http://localhost:5173/` atau `http://127.0.0.1:5173/`).
+1. **Penghancuran oleh Tubuh & Ekor Kaiju**:
+   - Sel gedung (4x4 px) di bawah telapak tubuh elips Kaiju menerima damage saat Kaiju melangkah/bergerak.
+   - Damage dipengaruhi oleh ukuran Kaiju (`currentScale`) dan kecepatan gerak (`currentSpeed`).
+   - Ekor yang menyapu di belakang Kaiju menghasilkan damage sekunder dengan radius melingkar di setiap segmen.
+   - **Rasa Bobot & Hambatan (*Slowdown*)**: Saat melindas struktur padat (seperti pencakar langit), Kaiju mengalami perlambatan dinamis (maksimal 25%, dapat diatur di config) dan sedikit demi sedikit pulih saat keluar dari reruntuhan.
+
+2. **Runtuh Gedung Spektakuler (Top-Down)**:
+   - Setiap gedung memiliki penghitung integritas sel hidup. Jika lebih dari 45% selnya hancur (atau sel pusat gedung hancur), gedung mengalami **keruntuhan total**:
+     - Sisa atap pecah serentak dalam **gelombang cincin dari episentrum ke luar** (animasi bertahap ~0.5 detik).
+     - **Debu & Puing Proporsional**: Gedung yang lebih tinggi membubungkan awan debu lebih tebal dan menghamburkan puing lebih luas.
+     - **Debris Splash**: Puing yang jatuh menimpa dan menghancurkan mobil serta manusia di sekitar gedung.
+     - **Guncangan & Retakan Pencakar Langit**: Gedung tinggi (tingkat >= 8) menghasilkan *hitstop* sangat singkat (~65ms freeze frame), kilatan cahaya oranye, retakan retak pada aspal jalan di sekitarnya, dan gelombang kejut (*shockwave*) yang meretakkan gedung-gedung kecil di dekatnya.
+
+3. **Partikel Efisien & Zero GC (Object Pools)**:
+   - **Debris Shards Pool (Maks 600)**: Pecahan partikel pixel warna-warni yang mewarisi warna asli atap gedung (`baseColor`).
+   - **Dust Clouds Pool (Maks 150)**: Awan debu abu-abu kecokelatan yang mengembang dan memudar secara halus.
+   - **Blood & Sparks Pool (Maks 50)**: Percikan merah gelap saat manusia terinjak dan kilatan api saat mobil/menara hancur.
+   - Sel yang hancur diganti menjadi tekstur **puing gelap bertekstur (*rubble*)** pada kanvas chunk yang tetap dapat dilewati secara bebas.
+   - **Dirty Rect Chunk Refresh Budget**: Pembaruan tekstur chunk dibatasi beberapa chunk per frame agar tidak terjadi stuttering/lag saat meratakan satu blok penuh.
+
+4. **Reaksi Manusia & Mobil**:
+   - Manusia panik dan **berlari menjauh** (*panic flee*) dengan kecepatan lari 2.2x saat Kaiju mendekat (jarak < 110 px).
+   - Manusia yang terinjak tubuh atau ekor Kaiju mati dengan percikan kecil dan menambah skor eliminasi & XP.
+   - Mobil yang terinjak atau tertimpa runtuhan menjadi penyok/remuk, berhenti melaju, dan mengeluarkan percikan debu/api.
+
+5. **HUD Telemetri Kehancuran**:
+   - Menampilkan persentase kehancuran kota (`DESTRUCTION: XX.X%`).
+   - Counter jumlah gedung hancur (`BUILDINGS: N`).
+   - Counter manusia tereliminasi (`KILLS: N`).
+   - Total XP terkumpul (`XP: N`).
+   - Skala Kaiju saat ini (`SCALE: X.Xx`).
+   - FPS & jumlah chunk aktif.
+
+6. **Tombol Debug Sementara**:
+   - **F**: Memperbesar skala Kaiju secara bertahap (+0.3x hingga 3.0x) untuk menguji penghancuran skala masif.
+   - **R**: Mengatur ulang seluruh kota secara bersih (*clean reset*): tekstur chunk lama dihapus dari memori, pool partikel direset, dan kota digenerate ulang dari seed yang sama dalam kondisi utuh.
 
 ---
 
 ## Kontrol Permainan
 
-- **W / A / S / D** atau **Tombol Panah**: Menggerakkan Kaiju ke 8 arah (dengan akselerasi berat, inersia gesekan, dan rotasi terinterpolasi halus).
-- **E**: Menyalakan / mematikan layer contoh **"Kulit Listrik"** (`skin_overlay`) untuk menguji sistem slot layer modular.
-- **F3**: Menampilkan / menyembunyikan HUD minimal (FPS, jumlah chunk aktif).
+| Tombol | Fungsi |
+| :--- | :--- |
+| **W, A, S, D** / **Panah** | Gerak Kaiju 8 arah (menghancurkan gedung saat melangkah) |
+| **E** | Menyalakan / mematikan layer **"Kulit Listrik"** |
+| **F** | *(Debug)* Memperbesar ukuran Kaiju secara bertahap (+0.3x hingga 3.0x) |
+| **R** | *(Debug)* Mengatur ulang kota & Kaiju (*Clean Reset*) |
+| **1, 2, 3, 4** | *(Debug)* Teleportasi cepat ke distrik (1: Downtown, 2: Residential, 3: Industrial, 4: Park/Canal) |
+| **F3** | Menampilkan / menyembunyikan HUD telemetri |
 
 ---
 
-## Struktur Proyek
+## Parameter Konfigurasi yang Dapat Diubah
 
-```
-Titanovore top down/
-├── index.html
-├── package.json
-├── src/
-│   ├── main.js                  # Entry point game Phaser 3
-│   ├── config/
-│   │   ├── palette.js           # Definisi palet warna pixel art gelap & dramatis
-│   │   ├── game.js              # Tuning Kaiju, kamera, dan kontrol
-│   │   └── world.js             # Ukuran dunia, grid cell 4x4, chunk, densitas, seed, crowd
-│   ├── entities/
-│   │   ├── Kaiju.js             # Entitas Kaiju (layer modular, ekor multi-segmen, inersia)
-│   │   └── Crowd.js             # 400 pejalan kaki + 40 mobil (frustum culled, tanpa physics body)
-│   ├── world/
-│   │   ├── CityGrid.js          # TypedArray 4x4 px grid & fast spatial queries (getCellAt, getBuildingsInRect)
-│   │   ├── CityGenerator.js     # Generator kota prosedural deterministik (jalan, gedung, taman, parkir)
-│   │   └── ChunkRenderer.js     # Renderer chunk 256x256 px progresif ke CanvasTexture & culling
-│   ├── scenes/
-│   │   ├── BootScene.js         # Generator tekstur prosedural in-memory & scene loader
-│   │   └── GameScene.js         # Orkestrasi gameplay utama, kamera, dan HUD
-│   └── utils/
-│       ├── prng.js              # Seeded PRNG Mulberry32 untuk kota reproducible
-│       └── textureGenerator.js  # Generator tekstur pixel art via kode (tanpa asset gambar luar)
-```
-
----
-
-## Konfigurasi yang Dapat Diubah
-
-Semua angka dan parameter tuning terpusat di folder `src/config/`:
+Semua angka tuning terpusat di `src/config/`:
 
 ### 1. `src/config/game.js`
-- **Kecepatan & Inersia Kaiju**:
-  - `kaiju.maxSpeed` (default `105`): Kecepatan gerak maksimum Kaiju dalam px/detik.
-  - `kaiju.acceleration` (default `300`): Tingkat akselerasi saat tombol arah ditekan.
-  - `kaiju.drag` (default `260`): Gesekan/dekselerasi ketika tombol dilepas.
-  - `kaiju.turnSpeed` (default `0.14`): Kecepatan interpolasi rotasi Kaiju menghadap arah gerak.
-  - `kaiju.stepShakeIntensity` (default `0.0018`): Kekuatan screen shake tiap langkah kaki.
-- **Ekor Kaiju**:
-  - `kaiju.tail.segmentCount` (default `5`): Jumlah segmen ekor yang mengikuti gerakan.
-  - `kaiju.tail.followSpeed` (default `0.22`): Kecepatan delay ekor mengikuti segmen depannya.
-  - `kaiju.tail.swayAmplitude` (default `0.12`): Amplitudo goyangan ekor saat diam/berjalan.
-- **Kamera & Zoom**:
-  - `camera.initialZoom` (default `1.6`): Faktor zoom awal (membuat kaiju terlihat besar dan kota terasa padat).
-  - `camera.followLerpX` & `followLerpY` (default `0.08`): Kehalusan kamera mengikuti Kaiju.
+- **Damage & Trampling**:
+  - `destruction.bodyDamageBase` (default `3.5`): Besaran damage dasar per injakan ke sel 4x4 px di bawah telapak Kaiju.
+  - `destruction.bodySpeedMultiplier` (default `0.03`): Pengali damage tambahan berdasarkan kecepatan gerak Kaiju.
+  - `destruction.tailDamageMultiplier` (default `0.55`): Rasio damage sapuan ekor terhadap damage tubuh.
+  - `destruction.trampleTickInterval` (default `45`): Interval pemeriksaan injakan (milidetik).
+- **Hambatan & Perlambatan (*Slowdown*)**:
+  - `destruction.maxSlowdownPercent` (default `0.25`): Persentase perlambatan kecepatan maksimal (25%) saat Kaiju menerobos gedung padat.
+  - `destruction.slowdownRecoveryRate` (default `1.8`): Kecepatan Kaiju memulihkan kecepatannya kembali normal setelah keluar dari reruntuhan.
+- **Screen Shake & Hitstop**:
+  - `destruction.trampleShakeIntensity` (default `0.0016`): Getaran mikro saat menginjak gedung.
+  - `destruction.collapseShakeIntensityBase` (default `0.006`): Kekuatan guncangan dasar saat gedung runtuh (dikalikan dengan ketinggian gedung).
+  - `destruction.hitstopDurationMs` (default `65`): Durasi freeze frame saat gedung pencakar langit runtuh.
+- **Batas Pool Partikel**:
+  - `destruction.maxDebrisParticles` (default `600`): Batas maksimal pecahan puing aktif.
+  - `destruction.maxDustParticles` (default `150`): Batas maksimal awan debu aktif.
+  - `destruction.maxBloodSparks` (default `50`): Batas maksimal percikan manusia/mobil.
+- **Kepanikan Manusia**:
+  - `destruction.humanFleeDistance` (default `110`): Jarak deteksi di mana manusia mulai panik dan lari menjauh.
+  - `destruction.humanFleeSpeedMultiplier` (default `2.2`): Pengali kecepatan sprint manusia saat panik.
 
 ### 2. `src/config/world.js`
-- **Seed Kota**:
-  - `seed` (default `948271`): Ubah angka ini untuk mengubah tata letak seluruh kota secara deterministik.
-- **Ukuran Dunia**:
-  - `worldWidth` (default `4000`) & `worldHeight` (default `4000`): Dimensi pixel dunia.
-- **Kepadatan Kota (Zonasi)**:
-  - `downtownRadius` (default `900`): Radius pusat kota padat dengan gedung tinggi dan helipad.
-  - `midtownRadius` (default `1550`): Radius zona menengah dengan gedung sedang dan taman.
-  - `suburbRadius` (default `2000`): Wilayah pinggiran dengan rumah kecil dan halaman luas.
-- **Jumlah Pejalan Kaki & Kendaraan**:
-  - `pedestrianCount` (default `400`): Jumlah manusia yang berkeliaran di jalan dan taman.
-  - `carCount` (default `40`): Jumlah mobil yang bergerak di jalan raya.
-- **Performa Chunking**:
-  - `chunkSize` (default `256`): Ukuran tiap chunk tekstur dalam pixel (256x256 px).
-  - `chunksPerFrame` (default `2`): Jumlah chunk yang di-render per frame saat memuat area baru secara progresif agar frame rate tidak drop.
+- **Ketahanan Gedung (*Cell HP*)**:
+  - `cellHpByType.residentialHouse` (default `1`): HP atap rumah kecil (langsung pecah dalam 1 injakan).
+  - `cellHpByType.commercialRuko` (default `2`): HP sel ruko komersial.
+  - `cellHpByType.officeBlock` (default `3`): HP sel gedung kantor.
+  - `cellHpByType.downtownTower` (default `4`): HP sel pencakar langit beton/baja.
+- **Ambang Runtuh (*Collapse Threshold*)**:
+  - `collapseThreshold` (default `0.45`): Batas persentase kerusakan (45%) di mana sisa gedung akan runtuh total secara serentak.
+- **Sebaran Puing Runtuhan**:
+  - `debrisSpreadRadiusFactor` (default `1.3`): Jarak percikan puing runtuhan keluar gedung menimpa mobil dan pejalan kaki.
+- **Anggaran Refresh Chunk**:
+  - `maxDirtyChunkUpdatesPerFrame` (default `4`): Batas maksimal chunk kanvas yang di-refresh ke GPU per frame untuk menjaga kelancaran 60 FPS tanpa stutter.
 
 ---
 
-## Cara Menghapus HUD (Untuk Produksi / Fase Lanjutan)
+## Cara Menghapus Tombol Debug & HUD Nanti
 
-Buka file [GameScene.js](file:///d:/work/AI/EronasProject/Project/Active/Titanovore%20top%20down/src/scenes/GameScene.js):
-1. Hapus atau beri komentar baris:
-   ```javascript
-   this.setupHUD();
-   ```
-   pada method `create()`.
-2. Hapus atau beri komentar baris:
-   ```javascript
-   this.updateHUD();
-   ```
-   pada method `update()`.
-3. (Opsional) Hapus baris pengaturan `hud` di [src/config/game.js](file:///d:/work/AI/EronasProject/Project/Active/Titanovore%20top%20down/src/config/game.js).
+Buka file [src/scenes/GameScene.js](file:///d:/work/AI/EronasProject/Project/Active/Titanovore%20top%20down/src/scenes/GameScene.js):
+1. **Menghapus Debug Keys (F, R, 1-4)**:
+   Hapus atau komentari pemanggilan `this.setupDebugKeys();` di dalam method `create()`.
+2. **Menghapus HUD**:
+   Hapus pemanggilan `this.setupHUD();` di `create()` dan `this.updateHUD();` di `update()`.

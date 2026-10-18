@@ -27,6 +27,7 @@ export class Kaiju {
     // Movement state
     this.isMoving = false;
     this.currentSpeed = 0;
+    this.slowdownFactor = 0; // Dynamic resistance when crushing dense buildings
 
     // Step cycle tracking
     this.stepDistanceAccumulator = 0;
@@ -271,13 +272,22 @@ export class Kaiju {
       this.isMoving = Math.hypot(this.vx, this.vy) > 2;
     }
 
-    // Clamp to maximum speed
+    // Calculate effective max speed with trampling slowdown penalty
+    const maxPenalty = GAME_CONFIG.destruction.maxSlowdownPercent || 0.25;
+    const currentPenalty = Math.min(maxPenalty, this.slowdownFactor);
+    const effectiveMaxSpeed = maxSpeed * (1 - currentPenalty);
+
+    // Slowly recover slowdown over time
+    const recovery = GAME_CONFIG.destruction.slowdownRecoveryRate || 1.8;
+    this.slowdownFactor = Math.max(0, this.slowdownFactor - recovery * dt);
+
+    // Clamp to effective maximum speed
     this.currentSpeed = Math.hypot(this.vx, this.vy);
-    if (this.currentSpeed > maxSpeed) {
-      const factor = maxSpeed / this.currentSpeed;
+    if (this.currentSpeed > effectiveMaxSpeed) {
+      const factor = effectiveMaxSpeed / this.currentSpeed;
       this.vx *= factor;
       this.vy *= factor;
-      this.currentSpeed = maxSpeed;
+      this.currentSpeed = effectiveMaxSpeed;
     }
 
     // Integrate position
@@ -426,6 +436,64 @@ export class Kaiju {
         }
       }
     }
+  }
+
+  /**
+   * Applies trample resistance when crushing dense skyscraper cells
+   * @param {number} amount 
+   */
+  applyResistance(amount) {
+    const maxPenalty = GAME_CONFIG.destruction.maxSlowdownPercent || 0.25;
+    this.slowdownFactor = Math.min(maxPenalty, this.slowdownFactor + amount);
+  }
+
+  /**
+   * Returns oriented ellipse parameters of the Kaiju torso footprint
+   */
+  getBodyFootprint() {
+    return {
+      cx: this.x,
+      cy: this.y,
+      rx: 24 * this.currentScale,
+      ry: 16 * this.currentScale,
+      angle: this.rotation
+    };
+  }
+
+  /**
+   * Returns circular footprints for each sweeping tail segment
+   */
+  getTailFootprints() {
+    const scale = this.currentScale;
+    return this.tailSegments.map((seg, idx) => ({
+      cx: seg.x,
+      cy: seg.y,
+      radius: (this.config.tail.segmentRadius[idx] + 2) * scale,
+      segmentIndex: idx
+    }));
+  }
+
+  /**
+   * Resets Kaiju state cleanly for world restart
+   */
+  resetPosition(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.rotation = 0;
+    this.slowdownFactor = 0;
+    this.container.setPosition(x, y);
+    this.container.setRotation(0);
+
+    const { segmentDistance } = this.config.tail;
+    this.tailSegments.forEach((seg, i) => {
+      seg.x = x - (i + 1) * segmentDistance * this.currentScale;
+      seg.y = y;
+      seg.angle = 0;
+      seg.sprite.setPosition(seg.x, seg.y);
+      seg.sprite.setRotation(0);
+    });
   }
 
   /**

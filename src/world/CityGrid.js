@@ -7,13 +7,17 @@ export const CELL_TYPES = {
   PARK: 3,
   PARKING: 4,
   BUILDING: 5,
-  BUILDING_DETAIL: 6
+  BUILDING_DETAIL: 6,
+  WATER: 7,
+  BRIDGE: 8,
+  INDUSTRIAL: 9,
+  RUBBLE: 10 // Destroyed walkable debris
 };
 
 /**
- * CityGrid
+ * CityGrid - Tahap 2B
  * High-performance 4x4 px cell typed array grid representing the city.
- * Prepared for Phase 2 voxel-like progressive building destruction.
+ * Tracks cell types, hit points, building integrity counters, and rubble states.
  */
 export class CityGrid {
   constructor(worldWidth = WORLD_CONFIG.worldWidth, worldHeight = WORLD_CONFIG.worldHeight, cellSize = WORLD_CONFIG.cellSize) {
@@ -24,13 +28,18 @@ export class CityGrid {
     this.rows = Math.floor(worldHeight / cellSize);
     this.totalCells = this.cols * this.rows;
 
-    // Typed arrays for blazing-fast 60 FPS spatial access & memory efficiency
+    // Typed arrays for memory efficiency & 60 FPS performance
     this.types = new Uint8Array(this.totalCells); // Cell type (0-255)
-    this.hp = new Uint8Array(this.totalCells); // Cell hit points (0-255)
-    this.buildingIds = new Uint32Array(this.totalCells); // Associated building ID (0 = none)
+    this.hp = new Uint8Array(this.totalCells); // Current cell HP
+    this.maxHp = new Uint8Array(this.totalCells); // Initial cell HP
+    this.buildingIds = new Uint32Array(this.totalCells); // Building ID (0 = none)
 
     // Registry of all building metadata instances by ID
     this.buildings = new Map();
+
+    // City-wide destruction telemetry
+    this.totalInitialBuildingCells = 0;
+    this.totalDestroyedCells = 0;
   }
 
   getIndex(col, row) {
@@ -52,12 +61,6 @@ export class CityGrid {
     };
   }
 
-  /**
-   * Fast query for cell at world coordinates (x, y)
-   * @param {number} worldX 
-   * @param {number} worldY 
-   * @returns {{ col: number, row: number, type: number, hp: number, buildingId: number } | null}
-   */
   getCellAt(worldX, worldY) {
     if (worldX < 0 || worldX >= this.worldWidth || worldY < 0 || worldY >= this.worldHeight) {
       return null;
@@ -70,38 +73,60 @@ export class CityGrid {
       row,
       type: this.types[idx],
       hp: this.hp[idx],
+      maxHp: this.maxHp[idx],
       buildingId: this.buildingIds[idx]
     };
   }
 
-  /**
-   * Sets cell properties at grid coordinates (col, row)
-   */
   setCell(col, row, type, hp = 0, buildingId = 0) {
     const idx = this.getIndex(col, row);
     if (idx !== -1) {
       this.types[idx] = type;
       this.hp[idx] = hp;
+      this.maxHp[idx] = hp;
       this.buildingIds[idx] = buildingId;
     }
   }
 
   /**
-   * Registers a building object in the spatial registry
+   * Registers a building object and rasters its footprint into the cell grid.
+   * Initializes live cell counters for O(1) collapse checking.
    * @param {Object} building 
    */
   registerBuilding(building) {
     this.buildings.set(building.id, building);
 
-    // Rasterize building footprint into cell grid
+    building.totalCells = 0;
+    building.aliveCells = 0;
+    building.isCollapsed = false;
+    building.cells = []; // Array of { col, row, idx }
+
     const minCol = Math.max(0, Math.floor(building.x / this.cellSize));
     const maxCol = Math.min(this.cols - 1, Math.floor((building.x + building.width) / this.cellSize));
     const minRow = Math.max(0, Math.floor(building.y / this.cellSize));
     const maxRow = Math.min(this.rows - 1, Math.floor((building.y + building.height) / this.cellSize));
 
+    const centerCol = Math.floor((minCol + maxCol) / 2);
+    const centerRow = Math.floor((minRow + maxRow) / 2);
+    building.centerCell = { col: centerCol, row: centerRow };
+
+    // Determine cell HP based on building type/zone
+    let cellHp = WORLD_CONFIG.cellHpByType.residentialHouse;
+    if (building.zone === 'downtown') {
+      cellHp = WORLD_CONFIG.cellHpByType.downtownTower;
+    } else if (building.zone === 'commercial') {
+      cellHp = WORLD_CONFIG.cellHpByType.commercialRuko;
+    } else if (building.zone === 'industrial') {
+      cellHp = WORLD_CONFIG.cellHpByType.industrialWarehouse;
+    } else if (building.heightLevel >= 6) {
+      cellHp = WORLD_CONFIG.cellHpByType.officeBlock;
+    }
+
+    building.cellHp = cellHp;
+
     for (let r = minRow; r <= maxRow; r++) {
       for (let c = minCol; c <= maxCol; c++) {
-        // If building is L-shaped, skip cutout quadrant
+        // Skip cutout in L-shaped buildings
         if (building.shape === 'l_shape' && building.cutout) {
           const cellWorld = this.gridToWorld(c, r);
           if (
@@ -113,19 +138,149 @@ export class CityGrid {
             continue;
           }
         }
+
         const idx = r * this.cols + c;
         this.types[idx] = CELL_TYPES.BUILDING;
-        this.hp[idx] = building.cellHp || 100;
+        this.hp[idx] = cellHp;
+        this.maxHp[idx] = cellHp;
         this.buildingIds[idx] = building.id;
+
+        building.totalCells++;
+        building.aliveCells++;
+        building.cells.push({ col: c, row: r, idx });
+        this.totalInitialBuildingCells++;
       }
     }
   }
 
   /**
-   * Fast spatial query returning all unique buildings intersecting given rectangle.
-   * Uses the cell grid for immediate lookup.
-   * @param {{ x: number, y: number, width: number, height: number }} rect 
-   * @returns {Array<Object>}
+   * Applies damage to a single cell.
+   * If HP reaches 0, turns cell into RUBBLE and checks building collapse threshold.
+   * @param {number} col 
+   * @param {number} row 
+   * @param {number} damage 
+   * @returns {{ damaged: boolean, destroyed: boolean, building: Object|null } | null}
+   */
+  damageCell(col, row, damage) {
+    const idx = this.getIndex(col, row);
+    if (idx === -1) return null;
+
+    const type = this.types[idx];
+    if (type !== CELL_TYPES.BUILDING && type !== CELL_TYPES.BUILDING_DETAIL) {
+      return null;
+    }
+
+    const bId = this.buildingIds[idx];
+    const building = this.buildings.get(bId) || null;
+
+    if (this.hp[idx] > 0) {
+      this.hp[idx] = Math.max(0, this.hp[idx] - damage);
+
+      if (this.hp[idx] <= 0) {
+        // Cell destroyed! Turn into walkable RUBBLE
+        this.types[idx] = CELL_TYPES.RUBBLE;
+        this.totalDestroyedCells++;
+
+        if (building) {
+          building.aliveCells = Math.max(0, building.aliveCells - 1);
+        }
+
+        return { damaged: true, destroyed: true, building, col, row, idx };
+      }
+
+      return { damaged: true, destroyed: false, building, col, row, idx };
+    }
+
+    return null;
+  }
+
+  /**
+   * Fast query for cells inside an oriented ellipse (Kaiju body footprint).
+   * @param {number} cx - World center X
+   * @param {number} cy - World center Y
+   * @param {number} rx - Radius X
+   * @param {number} ry - Radius Y
+   * @param {number} angle - Rotation angle radians
+   * @returns {Array<{ col: number, row: number, idx: number, worldX: number, worldY: number }>}
+   */
+  getCellsInEllipse(cx, cy, rx, ry, angle) {
+    const maxR = Math.max(rx, ry);
+    const minCol = Math.max(0, Math.floor((cx - maxR) / this.cellSize));
+    const maxCol = Math.min(this.cols - 1, Math.floor((cx + maxR) / this.cellSize));
+    const minRow = Math.max(0, Math.floor((cy - maxR) / this.cellSize));
+    const maxRow = Math.min(this.rows - 1, Math.floor((cy + maxR) / this.cellSize));
+
+    const cos = Math.cos(-angle);
+    const sin = Math.sin(-angle);
+    const invRx2 = 1 / (rx * rx);
+    const invRy2 = 1 / (ry * ry);
+
+    const result = [];
+
+    for (let r = minRow; r <= maxRow; r++) {
+      const wy = r * this.cellSize + this.cellSize / 2;
+      const dy = wy - cy;
+
+      for (let c = minCol; c <= maxCol; c++) {
+        const wx = c * this.cellSize + this.cellSize / 2;
+        const dx = wx - cx;
+
+        // Rotate into local unrotated ellipse space
+        const lx = dx * cos - dy * sin;
+        const ly = dx * sin + dy * cos;
+
+        if (lx * lx * invRx2 + ly * ly * invRy2 <= 1.0) {
+          result.push({
+            col: c,
+            row: r,
+            idx: r * this.cols + c,
+            worldX: wx,
+            worldY: wy
+          });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Fast query for cells inside a circle (for tail segments or shockwaves)
+   */
+  getCellsInCircle(cx, cy, radius) {
+    const minCol = Math.max(0, Math.floor((cx - radius) / this.cellSize));
+    const maxCol = Math.min(this.cols - 1, Math.floor((cx + radius) / this.cellSize));
+    const minRow = Math.max(0, Math.floor((cy - radius) / this.cellSize));
+    const maxRow = Math.min(this.rows - 1, Math.floor((cy + radius) / this.cellSize));
+
+    const r2 = radius * radius;
+    const result = [];
+
+    for (let r = minRow; r <= maxRow; r++) {
+      const wy = r * this.cellSize + this.cellSize / 2;
+      const dy = wy - cy;
+
+      for (let c = minCol; c <= maxCol; c++) {
+        const wx = c * this.cellSize + this.cellSize / 2;
+        const dx = wx - cx;
+
+        if (dx * dx + dy * dy <= r2) {
+          result.push({
+            col: c,
+            row: r,
+            idx: r * this.cols + c,
+            worldX: wx,
+            worldY: wy
+          });
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Fast spatial query returning unique buildings intersecting rect.
    */
   getBuildingsInRect(rect) {
     const minCol = Math.max(0, Math.floor(rect.x / this.cellSize));
@@ -136,7 +291,6 @@ export class CityGrid {
     const foundIds = new Set();
     const result = [];
 
-    // Step by 2 or 3 cells for high performance when checking larger rects
     const step = 2;
     for (let r = minRow; r <= maxRow; r += step) {
       for (let c = minCol; c <= maxCol; c += step) {
@@ -151,5 +305,13 @@ export class CityGrid {
     }
 
     return result;
+  }
+
+  /**
+   * Returns current city-wide destruction percentage (0.0 to 100.0)
+   */
+  getDestructionPercentage() {
+    if (this.totalInitialBuildingCells === 0) return 0;
+    return (this.totalDestroyedCells / this.totalInitialBuildingCells) * 100;
   }
 }

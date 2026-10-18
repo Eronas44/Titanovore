@@ -259,45 +259,110 @@ export class TextureGenerator {
   }
 
   /**
-   * Car Textures (8x4 px)
+   * Car Textures (8x4 px normal, and 18x8 px with illuminated headlight beams)
    */
   static createCarTextures(scene) {
     const { width, height } = WORLD_CONFIG.carSize; // 8x4
-    // Facing right (0 radians)
+
     PALETTE.carBodies.forEach((color, idx) => {
-      const key = `car_${idx}`;
-      if (!scene.textures.exists(key)) {
-        const canvas = scene.textures.createCanvas(key, width, height);
+      const bodyHex = `#${color.toString(16).padStart(6, '0')}`;
+
+      // 1. Normal Car (8x4)
+      const normalKey = `car_${idx}`;
+      if (!scene.textures.exists(normalKey)) {
+        const canvas = scene.textures.createCanvas(normalKey, width, height);
         const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = false;
 
-        const bodyHex = `#${color.toString(16).padStart(6, '0')}`;
-
-        // Wheels at bottom/top edges
+        // Wheels
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(1, 0, 2, 1);
         ctx.fillRect(5, 0, 2, 1);
         ctx.fillRect(1, 3, 2, 1);
         ctx.fillRect(5, 3, 2, 1);
 
-        // Main Car Body
+        // Body
         ctx.fillStyle = bodyHex;
         ctx.fillRect(0, 0, width, height);
 
-        // Windshields (front at right x=5..6, rear at left x=2)
+        // Windshields
         ctx.fillStyle = PALETTE.carWindowHex;
-        ctx.fillRect(5, 1, 1, 2); // Front windshield
-        ctx.fillRect(2, 1, 1, 2); // Rear windshield
+        ctx.fillRect(5, 1, 1, 2);
+        ctx.fillRect(2, 1, 1, 2);
 
-        // Headlights (Right side / front)
+        // Headlights
         ctx.fillStyle = PALETTE.carHeadlightHex;
         ctx.fillRect(7, 0, 1, 1);
         ctx.fillRect(7, 3, 1, 1);
 
-        // Taillights (Left side / back)
+        // Taillights
         ctx.fillStyle = PALETTE.carTaillightHex;
         ctx.fillRect(0, 0, 1, 1);
         ctx.fillRect(0, 3, 1, 1);
+
+        canvas.refresh();
+      }
+
+      // 2. Car with Illuminated Headlights (18x8 px, car at x=2, y=2, beam extends forward)
+      const lightKey = `car_headlights_${idx}`;
+      if (!scene.textures.exists(lightKey)) {
+        const fullW = 20;
+        const fullH = 10;
+        const canvas = scene.textures.createCanvas(lightKey, fullW, fullH);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        const carX = 1;
+        const carY = 3;
+
+        // Headlight beams projected forward from x=9 to 20
+        const grad = ctx.createLinearGradient(carX + width, carY + 2, fullW, carY + 2);
+        grad.addColorStop(0, 'rgba(254, 240, 138, 0.40)');
+        grad.addColorStop(0.5, 'rgba(254, 240, 138, 0.18)');
+        grad.addColorStop(1, 'rgba(254, 240, 138, 0)');
+
+        ctx.fillStyle = grad;
+        // Top headlight beam cone
+        ctx.beginPath();
+        ctx.moveTo(carX + width, carY);
+        ctx.lineTo(fullW, carY - 2);
+        ctx.lineTo(fullW, carY + 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Bottom headlight beam cone
+        ctx.beginPath();
+        ctx.moveTo(carX + width, carY + height);
+        ctx.lineTo(fullW, carY + height - 2);
+        ctx.lineTo(fullW, carY + height + 2);
+        ctx.closePath();
+        ctx.fill();
+
+        // Wheels
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(carX + 1, carY + 0, 2, 1);
+        ctx.fillRect(carX + 5, carY + 0, 2, 1);
+        ctx.fillRect(carX + 1, carY + 3, 2, 1);
+        ctx.fillRect(carX + 5, carY + 3, 2, 1);
+
+        // Body
+        ctx.fillStyle = bodyHex;
+        ctx.fillRect(carX, carY, width, height);
+
+        // Windshields
+        ctx.fillStyle = PALETTE.carWindowHex;
+        ctx.fillRect(carX + 5, carY + 1, 1, 2);
+        ctx.fillRect(carX + 2, carY + 1, 1, 2);
+
+        // Glowing Headlights
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(carX + 7, carY + 0, 1, 1);
+        ctx.fillRect(carX + 7, carY + 3, 1, 1);
+
+        // Taillights
+        ctx.fillStyle = PALETTE.carTaillightHex;
+        ctx.fillRect(carX, carY + 0, 1, 1);
+        ctx.fillRect(carX, carY + 3, 1, 1);
 
         canvas.refresh();
       }

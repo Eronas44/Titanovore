@@ -1,6 +1,6 @@
 /**
  * Titanovore Game Configuration
- * All gameplay tuning, engine parameters, and entity stats.
+ * All gameplay tuning, engine parameters, entity stats, and destruction mechanics.
  */
 export const GAME_CONFIG = {
   // Screen / Resolution
@@ -32,6 +32,41 @@ export const GAME_CONFIG = {
     slots: ['body', 'back_slot', 'skin_overlay', 'head_slot', 'tail_slot']
   },
 
+  // Destruction Tuning (Tahap 2B)
+  destruction: {
+    // Body & Tail Trample Damage
+    bodyDamageBase: 3.5, // Base damage applied to building cells underfoot per tick
+    bodySpeedMultiplier: 0.03, // Extra damage from high movement speed
+    tailDamageMultiplier: 0.55, // Tail sweeps deal 55% of body damage
+    trampleTickInterval: 45, // ms between trample damage pulses
+
+    // Dynamic Slowdown (Simulates crushing dense skyscrapers)
+    maxSlowdownPercent: 0.25, // Up to 25% speed penalty when crushing dense structures
+    slowdownRecoveryRate: 1.8, // Speed recovery factor per second back to 100%
+
+    // Screen Shake & Hitstop
+    trampleShakeIntensity: 0.0016, // Micro rumble while trampling
+    trampleShakeDuration: 55,
+    collapseShakeIntensityBase: 0.006, // Base shake on building collapse
+    collapseShakeDuration: 220, // ms
+    hitstopDurationMs: 65, // Brief freeze frame on large skyscraper collapse
+
+    // Particle Object Pools (Performance caps)
+    maxDebrisParticles: 600, // Debris shards pool cap
+    maxDustParticles: 150, // Billowing dust clouds pool cap
+    maxBloodSparks: 50, // Human squish / car spark pool cap
+
+    // Human Panic / Fleeing
+    humanFleeDistance: 110, // Distance (px) where pedestrians panic and flee
+    humanFleeSpeedMultiplier: 2.2, // Pedestrian sprint speed while fleeing
+
+    // Scoring / XP Counters
+    xpPerCell: 5,
+    xpPerBuildingCollapse: 120,
+    xpPerHuman: 10,
+    xpPerCar: 25
+  },
+
   // Camera Settings
   camera: {
     initialZoom: 1.6, // Zoom factor (makes kaiju look big, city dense)
@@ -45,6 +80,6 @@ export const GAME_CONFIG = {
     showByDefault: true,
     toggleKey: 'F3',
     textColor: '#38ef7d',
-    bgColor: 'rgba(11, 10, 16, 0.75)'
+    bgColor: 'rgba(11, 10, 16, 0.85)'
   }
 };
