@@ -6,14 +6,16 @@ export const ENEMY_TYPES = {
   INACTIVE: 0,
   CITIZEN: 1,
   POLICE: 2,
-  POLICE_CAR: 3
+  POLICE_CAR: 3,
+  TANK: 4
 };
 
 /**
- * High-Performance Enemy & Threat Manager - Tahap 3A
+ * High-Performance Enemy & Threat Manager - Tahap 3A-2
  * Architecture:
  * - Data-Oriented Design (Structure of Arrays using typed Float32/Int16/Uint8 arrays)
  * - Zero GC runtime allocations: Fixed pre-allocated sprite pool & bullet pool
+ * - NavGrid Flow Field & Wall Collision Resolution (prevents wall clipping, enables dynamic rubble paths)
  * - Spatial Hash Grid (32x32 px cells) for O(1) neighbor lookups, separation, and trample
  * - Distance-tiered updates: Full AI within activeUpdateRadius, sparse/frozen beyond
  * - Off-screen ring spawning along streets with automatic recycling on despawn
@@ -22,12 +24,14 @@ export class EnemyManager {
   /**
    * @param {Phaser.Scene} scene 
    * @param {Object} cityGrid - CityGrid instance
+   * @param {Object} navGrid - NavGrid navigation instance
    * @param {number} worldWidth 
    * @param {number} worldHeight 
    */
-  constructor(scene, cityGrid, worldWidth = 4000, worldHeight = 4000) {
+  constructor(scene, cityGrid, navGrid, worldWidth = 4000, worldHeight = 4000) {
     this.scene = scene;
     this.cityGrid = cityGrid;
+    this.navGrid = navGrid;
     this.worldWidth = worldWidth;
     this.worldHeight = worldHeight;
     this.prng = new PRNG(1337);
@@ -43,7 +47,7 @@ export class EnemyManager {
     this.vy = new Float32Array(this.maxEnemies);
     this.hp = new Float32Array(this.maxEnemies);
     this.maxHp = new Float32Array(this.maxEnemies);
-    this.type = new Uint8Array(this.maxEnemies); // 0=none, 1=citizen, 2=police, 3=police_car
+    this.type = new Uint8Array(this.maxEnemies); // 0=none, 1=citizen, 2=police, 3=police_car, 4=tank
     this.state = new Uint8Array(this.maxEnemies); // 0=wander, 1=flee/engage, 2=retreat
     this.timer = new Float32Array(this.maxEnemies); // shoot/animation timers
     this.rotation = new Float32Array(this.maxEnemies);
@@ -64,6 +68,7 @@ export class EnemyManager {
     this.bulletLife = new Float32Array(this.maxBullets);
     this.bulletActive = new Uint8Array(this.maxBullets);
     this.bulletDamage = new Float32Array(this.maxBullets);
+    this.bulletIsShell = new Uint8Array(this.maxBullets); // 0=standard bullet, 1=heavy tank shell
 
     this.freeBulletIndices = [];
     for (let i = this.maxBullets - 1; i >= 0; i--) {
@@ -89,7 +94,7 @@ export class EnemyManager {
       this.sprites[i] = sprite;
     }
 
-    // 5. Dedicated Graphics Batch for Bullet Tracers
+    // 5. Dedicated Graphics Batch for Bullet & Shell Tracers
     this.bulletGraphics = this.scene.add.graphics().setDepth(16);
 
     // 6. Spawn timers
@@ -183,6 +188,11 @@ export class EnemyManager {
       this.maxHp[idx] = tCfg.POLICE_CAR.hp;
       this.timer[idx] = 0; // Siren toggle timer
       this.subType[idx] = 0; // Frame 0
+    } else if (type === ENEMY_TYPES.TANK) {
+      this.hp[idx] = tCfg.TANK.hp;
+      this.maxHp[idx] = tCfg.TANK.hp;
+      this.timer[idx] = this.prng.range(tCfg.TANK.shootIntervalMin, tCfg.TANK.shootIntervalMax);
+      this.subType[idx] = 0;
     }
 
     return idx;
@@ -205,7 +215,7 @@ export class EnemyManager {
   /**
    * Spawns a projectile from enemy position towards target.
    */
-  spawnBullet(x, y, vx, vy, damage = 3, life = 1.1) {
+  spawnBullet(x, y, vx, vy, damage = 3, life = 1.1, isShell = false) {
     if (this.freeBulletIndices.length === 0) return -1;
     const idx = this.freeBulletIndices.pop();
 
@@ -216,6 +226,7 @@ export class EnemyManager {
     this.bulletVy[idx] = vy;
     this.bulletDamage[idx] = damage;
     this.bulletLife[idx] = life;
+    this.bulletIsShell[idx] = isShell ? 1 : 0;
     this.activeBulletCount++;
 
     return idx;
@@ -259,40 +270,51 @@ export class EnemyManager {
         continue;
       }
 
-      // Check grid cell: only spawn on roads, sidewalks, parks, or open pavement (not inside buildings)
-      const cell = this.cityGrid.getCellAt(sx, sy);
-      if (cell && (cell.type === CELL_TYPES.BUILDING || cell.type === CELL_TYPES.BUILDING_DETAIL)) {
-        // Nudge to nearest open street
-        const offset = 16;
-        let found = false;
-        const testOffsets = [
-          { dx: offset, dy: 0 },
-          { dx: -offset, dy: 0 },
-          { dx: 0, dy: offset },
-          { dx: 0, dy: -offset }
-        ];
-
-        for (let t = 0; t < 4; t++) {
-          const nx = sx + testOffsets[t].dx;
-          const ny = sy + testOffsets[t].dy;
-          const nCell = this.cityGrid.getCellAt(nx, ny);
-          if (nCell && nCell.type !== CELL_TYPES.BUILDING && nCell.type !== CELL_TYPES.BUILDING_DETAIL) {
-            sx = nx;
-            sy = ny;
-            found = true;
-            break;
-          }
-        }
-        if (!found) continue; // Skip spawn if completely obstructed
-      }
-
-      // Roll enemy type according to weights
+      // Roll enemy type according to weights:
+      // CITIZEN: 0.15, POLICE: 0.45, POLICE_CAR: 0.10, TANK: 0.30
       const roll = this.prng.next();
       let selectedType = ENEMY_TYPES.CITIZEN;
-      if (roll > types.CITIZEN.spawnWeight + types.POLICE.spawnWeight) {
-        selectedType = ENEMY_TYPES.POLICE_CAR;
-      } else if (roll > types.CITIZEN.spawnWeight) {
+      const wCitizen = types.CITIZEN.spawnWeight;
+      const wPolice = wCitizen + types.POLICE.spawnWeight;
+      const wCar = wPolice + types.POLICE_CAR.spawnWeight;
+
+      if (roll < wCitizen) {
+        selectedType = ENEMY_TYPES.CITIZEN;
+      } else if (roll < wPolice) {
         selectedType = ENEMY_TYPES.POLICE;
+      } else if (roll < wCar) {
+        selectedType = ENEMY_TYPES.POLICE_CAR;
+      } else {
+        selectedType = ENEMY_TYPES.TANK;
+      }
+
+      const isVehicle = selectedType === ENEMY_TYPES.TANK || selectedType === ENEMY_TYPES.POLICE_CAR;
+
+      // Check walkability using NavGrid if available
+      if (this.navGrid) {
+        if (!this.navGrid.isWalkable(sx, sy, isVehicle)) {
+          // Nudge to nearest walkable cell
+          let found = false;
+          const offsets = [8, -8, 16, -16, 24, -24];
+          for (let ox of offsets) {
+            for (let oy of offsets) {
+              if (this.navGrid.isWalkable(sx + ox, sy + oy, isVehicle)) {
+                sx += ox;
+                sy += oy;
+                found = true;
+                break;
+              }
+            }
+            if (found) break;
+          }
+          if (!found) continue; // Skip spawn if obstructed
+        }
+      } else {
+        // Fallback check against cityGrid
+        const cell = this.cityGrid.getCellAt(sx, sy);
+        if (cell && (cell.type === CELL_TYPES.BUILDING || cell.type === CELL_TYPES.BUILDING_DETAIL)) {
+          continue;
+        }
       }
 
       this.spawnEnemy(selectedType, sx, sy, angle + Math.PI);
@@ -346,6 +368,7 @@ export class EnemyManager {
         const dxToKaiju = kx - ex;
         const dyToKaiju = ky - ey;
         const distToKaiju = Math.hypot(dxToKaiju, dyToKaiju);
+        const invDist = 1 / Math.max(1, distToKaiju);
 
         // --- CITIZEN AI (Warga Panik) ---
         if (eType === ENEMY_TYPES.CITIZEN) {
@@ -353,11 +376,10 @@ export class EnemyManager {
           if (distToKaiju < cfg.fleeDistance) {
             // Panic! Sprint away from Kaiju
             this.state[i] = 1; // FLEEING
-            const invDist = 1 / Math.max(1, distToKaiju);
             let fleeVx = -dxToKaiju * invDist * cfg.speedFleeing;
             let fleeVy = -dyToKaiju * invDist * cfg.speedFleeing;
 
-            // Separation from nearby citizens to avoid clustering into one point
+            // Separation from nearby citizens to avoid clustering
             let sepX = 0;
             let sepY = 0;
             this.queryEnemiesInRadius(ex, ey, 14, (nIdx, ndx, ndy, d2) => {
@@ -383,14 +405,25 @@ export class EnemyManager {
               this.rotation[i] = wanderAngle;
             }
           }
+
+          // Wall collision resolution for pedestrians (regular grid)
+          if (this.navGrid) {
+            const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, false);
+            this.x[i] = res.x;
+            this.y[i] = res.y;
+            this.vx[i] = res.vx;
+            this.vy[i] = res.vy;
+          } else {
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+          }
         }
 
-        // --- POLICE AI (Polisi) ---
+        // --- POLICE AI (Polisi - Infantry with Flow Field) ---
         else if (eType === ENEMY_TYPES.POLICE) {
           const cfg = types.POLICE;
-          const invDist = 1 / Math.max(1, distToKaiju);
 
-          // Separation force to form a spread firing line
+          // Separation force to form a tactical firing line
           let sepX = 0;
           let sepY = 0;
           this.queryEnemiesInRadius(ex, ey, cfg.separationDistance, (nIdx, ndx, ndy, d2) => {
@@ -401,19 +434,26 @@ export class EnemyManager {
             }
           });
 
+          // Sample Infantry Flow Field towards Kaiju
+          const flow = this.navGrid ? this.navGrid.getInfantryFlow(ex, ey) : { x: 0, y: 0 };
+          const flowActive = flow.x !== 0 || flow.y !== 0;
+          const flowX = flowActive ? flow.x : (dxToKaiju * invDist);
+          const flowY = flowActive ? flow.y : (dyToKaiju * invDist);
+
           if (distToKaiju > cfg.shootRangeMax) {
-            // Advance towards Kaiju
-            this.vx[i] = dxToKaiju * invDist * cfg.speed + sepX;
-            this.vy[i] = dyToKaiju * invDist * cfg.speed + sepY;
-            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+            // Advance along flow field towards Kaiju
+            this.vx[i] = flowX * cfg.speed + sepX;
+            this.vy[i] = flowY * cfg.speed + sepY;
+            if (Math.hypot(this.vx[i], this.vy[i]) > 1) {
+              this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
+            }
           } else if (distToKaiju < cfg.shootRangeMin) {
-            // Kaiju too close! Back away slowly while firing
-            this.vx[i] = -dxToKaiju * invDist * (cfg.speed * 0.6) + sepX;
-            this.vy[i] = -dyToKaiju * invDist * (cfg.speed * 0.6) + sepY;
-            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju); // Still face Kaiju
+            // Kaiju too close! Back away slowly along flow while facing Kaiju
+            this.vx[i] = -flowX * (cfg.speed * 0.6) + sepX;
+            this.vy[i] = -flowY * (cfg.speed * 0.6) + sepY;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
           } else {
-            // In optimal firing pocket (70-92 px)
-            // Drift sideways with separation
+            // In optimal firing pocket (70-92 px): strafe sideways
             this.vx[i] = -dyToKaiju * invDist * 18 + sepX;
             this.vy[i] = dxToKaiju * invDist * 18 + sepY;
             this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju); // Face Kaiju
@@ -423,28 +463,44 @@ export class EnemyManager {
             if (this.timer[i] <= 0) {
               this.timer[i] = this.prng.range(cfg.shootIntervalMin, cfg.shootIntervalMax);
 
-              // Shoot bullet towards Kaiju with slight inaccuracy spread
               const aimSpread = this.prng.range(-0.14, 0.14);
               const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + aimSpread;
               const bVx = Math.cos(shootAngle) * cfg.bulletSpeed;
               const bVy = Math.sin(shootAngle) * cfg.bulletSpeed;
 
-              this.spawnBullet(ex, ey, bVx, bVy, cfg.bulletDamage, cfg.bulletLife);
-              // Small muzzle puff
+              this.spawnBullet(ex, ey, bVx, bVy, cfg.bulletDamage, cfg.bulletLife, false);
               particleManager.emitDebris(ex, ey, 0xfef08a, 1, 20);
             }
           }
+
+          // Wall collision resolution (infantry grid)
+          if (this.navGrid) {
+            const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, false);
+            this.x[i] = res.x;
+            this.y[i] = res.y;
+            this.vx[i] = res.vx;
+            this.vy[i] = res.vy;
+          } else {
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+          }
         }
 
-        // --- POLICE CAR AI (Mobil Polisi) ---
+        // --- POLICE CAR AI (Mobil Polisi - Vehicle Flow Field) ---
         else if (eType === ENEMY_TYPES.POLICE_CAR) {
           const cfg = types.POLICE_CAR;
-          const invDist = 1 / Math.max(1, distToKaiju);
 
-          // Rush towards Kaiju
-          this.vx[i] = dxToKaiju * invDist * cfg.speed;
-          this.vy[i] = dyToKaiju * invDist * cfg.speed;
-          this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+          // Sample Vehicle Flow Field (inflated grid keeps cars off walls)
+          const flow = this.navGrid ? this.navGrid.getVehicleFlow(ex, ey) : { x: 0, y: 0 };
+          const flowActive = flow.x !== 0 || flow.y !== 0;
+          const flowX = flowActive ? flow.x : (dxToKaiju * invDist);
+          const flowY = flowActive ? flow.y : (dyToKaiju * invDist);
+
+          this.vx[i] = flowX * cfg.speed;
+          this.vy[i] = flowY * cfg.speed;
+          if (Math.hypot(this.vx[i], this.vy[i]) > 1) {
+            this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
+          }
 
           // Siren animation toggle
           this.timer[i] += dt;
@@ -453,19 +509,98 @@ export class EnemyManager {
             this.subType[i] = this.subType[i] === 0 ? 1 : 0;
           }
 
+          // Wall collision resolution (inflated vehicle grid)
+          if (this.navGrid) {
+            const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, true);
+            this.x[i] = res.x;
+            this.y[i] = res.y;
+            this.vx[i] = res.vx;
+            this.vy[i] = res.vy;
+          } else {
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+          }
+
           // Check direct ram collision with Kaiju body
           if (distToKaiju < 26 * kaiju.currentScale) {
             kaiju.takeDamage(cfg.ramDamage);
-            particleManager.emitDebris(ex, ey, 0x1e3a8a, 8, 65);
-            particleManager.emitCollapseFlash(ex, ey, 16);
+            particleManager.emitDebris(this.x[i], this.y[i], 0x1e3a8a, 8, 65);
+            particleManager.emitCollapseFlash(this.x[i], this.y[i], 16);
             this.despawnEnemy(i);
             continue;
           }
         }
 
-        // Integrate position
-        this.x[i] += this.vx[i] * dt;
-        this.y[i] += this.vy[i] * dt;
+        // --- TANK AI (Tank Militer - Heavy Vehicle Artillery) ---
+        else if (eType === ENEMY_TYPES.TANK) {
+          const cfg = types.TANK;
+
+          // Vehicle separation force so tanks don't stack
+          let sepX = 0;
+          let sepY = 0;
+          this.queryEnemiesInRadius(ex, ey, 24, (nIdx, ndx, ndy, d2) => {
+            if (nIdx !== i && d2 > 0.1) {
+              const d = Math.sqrt(d2);
+              sepX -= (ndx / d) * 35;
+              sepY -= (ndy / d) * 35;
+            }
+          });
+
+          // Sample Vehicle Flow Field (inflated grid ensures clear street corridors)
+          const flow = this.navGrid ? this.navGrid.getVehicleFlow(ex, ey) : { x: 0, y: 0 };
+          const flowActive = flow.x !== 0 || flow.y !== 0;
+          const flowX = flowActive ? flow.x : (dxToKaiju * invDist);
+          const flowY = flowActive ? flow.y : (dyToKaiju * invDist);
+
+          if (distToKaiju > cfg.shootRangeMax) {
+            // Advance along streets towards Kaiju
+            this.vx[i] = flowX * cfg.speed + sepX;
+            this.vy[i] = flowY * cfg.speed + sepY;
+            if (Math.hypot(this.vx[i], this.vy[i]) > 1) {
+              this.rotation[i] = Math.atan2(this.vy[i], this.vx[i]);
+            }
+          } else if (distToKaiju < cfg.shootRangeMin) {
+            // Kaiju approaching! Reverse treads slowly while keeping turret locked on Kaiju
+            this.vx[i] = -flowX * (cfg.speed * 0.5) + sepX;
+            this.vy[i] = -flowY * (cfg.speed * 0.5) + sepY;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+          } else {
+            // In optimal heavy artillery firing pocket (110-170 px)
+            // Stop chassis and lock turret directly onto Kaiju
+            this.vx[i] = sepX * 0.4;
+            this.vy[i] = sepY * 0.4;
+            this.rotation[i] = Math.atan2(dyToKaiju, dxToKaiju);
+
+            // Artillery Firing Logic
+            this.timer[i] -= dt;
+            if (this.timer[i] <= 0) {
+              this.timer[i] = this.prng.range(cfg.shootIntervalMin, cfg.shootIntervalMax);
+
+              const aimSpread = this.prng.range(-0.06, 0.06);
+              const shootAngle = Math.atan2(dyToKaiju, dxToKaiju) + aimSpread;
+              const sVx = Math.cos(shootAngle) * cfg.shellSpeed;
+              const sVy = Math.sin(shootAngle) * cfg.shellSpeed;
+              const muzzleX = ex + Math.cos(shootAngle) * 9;
+              const muzzleY = ey + Math.sin(shootAngle) * 9;
+
+              this.spawnBullet(muzzleX, muzzleY, sVx, sVy, cfg.shellDamage, cfg.shellLife, true);
+              particleManager.emitDebris(muzzleX, muzzleY, 0xf97316, 4, 50);
+              particleManager.emitDust(muzzleX, muzzleY, 2, 0.8);
+            }
+          }
+
+          // Wall collision resolution (inflated vehicle grid)
+          if (this.navGrid) {
+            const res = this.navGrid.resolveMovement(ex, ey, this.vx[i], this.vy[i], dt, true);
+            this.x[i] = res.x;
+            this.y[i] = res.y;
+            this.vx[i] = res.vx;
+            this.vy[i] = res.vy;
+          } else {
+            this.x[i] += this.vx[i] * dt;
+            this.y[i] += this.vy[i] * dt;
+          }
+        }
       }
 
       // 5. Frustum Culling & Rendering
@@ -489,6 +624,8 @@ export class EnemyManager {
           sprite.setTexture('enemy_police');
         } else if (eType === ENEMY_TYPES.POLICE_CAR) {
           sprite.setTexture(`enemy_police_car_${this.subType[i]}`);
+        } else if (eType === ENEMY_TYPES.TANK) {
+          sprite.setTexture('enemy_tank');
         }
       } else {
         if (sprite.visible) {
@@ -497,7 +634,7 @@ export class EnemyManager {
       }
     }
 
-    // 6. Update Projectiles (Bullets)
+    // 6. Update Projectiles (Bullets & Artillery Shells)
     this.updateBullets(dt, kaiju, particleManager);
   }
 
@@ -509,7 +646,8 @@ export class EnemyManager {
     const kx = kaiju.x;
     const ky = kaiju.y;
     const kaijuHitRadius = 24 * kaiju.currentScale;
-    const { bulletBuildingDamage } = ENEMY_CONFIG;
+    const { bulletBuildingDamage, types } = ENEMY_CONFIG;
+    const shellBuildingDamage = types.TANK.shellBuildingDamage;
 
     for (let i = 0; i < this.maxBullets; i++) {
       if (!this.bulletActive[i]) continue;
@@ -526,32 +664,57 @@ export class EnemyManager {
 
       const bx = this.bulletX[i];
       const by = this.bulletY[i];
+      const isShell = this.bulletIsShell[i] === 1;
 
       // A. Collision with Kaiju
       const distToKaiju = Math.hypot(bx - kx, by - ky);
       if (distToKaiju <= kaijuHitRadius) {
         const damageDealt = kaiju.takeDamage(this.bulletDamage[i]);
         if (damageDealt) {
-          particleManager.emitDebris(bx, by, 0xffd23f, 2, 35);
+          if (isShell) {
+            particleManager.emitDebris(bx, by, 0xf97316, 6, 55);
+            particleManager.emitCollapseFlash(bx, by, 16);
+            this.scene.cameras.main.shake(100, 0.005);
+          } else {
+            particleManager.emitDebris(bx, by, 0xffd23f, 2, 35);
+          }
         }
         this.despawnBullet(i);
         continue;
       }
 
-      // B. Collision with Buildings (Stray bullets damage buildings)
+      // B. Collision with Buildings (Bullets and shells damage city structures)
       const cell = this.cityGrid.getCellAt(bx, by);
       if (cell && (cell.type === CELL_TYPES.BUILDING || cell.type === CELL_TYPES.BUILDING_DETAIL)) {
-        this.cityGrid.damageCell(cell.col, cell.row, bulletBuildingDamage);
-        particleManager.emitDebris(bx, by, 0x94a3b8, 1, 20);
+        const bDmg = isShell ? shellBuildingDamage : bulletBuildingDamage;
+        this.cityGrid.damageCell(cell.col, cell.row, bDmg);
+
+        if (isShell) {
+          particleManager.emitDebris(bx, by, 0xf97316, 6, 60);
+          particleManager.emitDust(bx, by, 3, 1.2);
+          particleManager.emitCollapseFlash(bx, by, 12);
+        } else {
+          particleManager.emitDebris(bx, by, 0x94a3b8, 1, 20);
+        }
+
         this.despawnBullet(i);
         continue;
       }
 
-      // C. Render Bullet Tracer (Golden yellow tracer with white core)
-      this.bulletGraphics.fillStyle(0xfde047, 0.9);
-      this.bulletGraphics.fillRect(bx - 1, by - 1, 2, 2);
-      this.bulletGraphics.fillStyle(0xffffff, 1.0);
-      this.bulletGraphics.fillRect(bx, by, 1, 1);
+      // C. Render Tracers
+      if (isShell) {
+        // Heavy 4x4 Artillery Shell (Fiery orange shell with glowing white core)
+        this.bulletGraphics.fillStyle(0xea580c, 0.95);
+        this.bulletGraphics.fillRect(bx - 2, by - 2, 4, 4);
+        this.bulletGraphics.fillStyle(0xffffff, 1.0);
+        this.bulletGraphics.fillRect(bx - 1, by - 1, 2, 2);
+      } else {
+        // Standard 2x2 Police Bullet (Golden yellow tracer with white core)
+        this.bulletGraphics.fillStyle(0xfde047, 0.9);
+        this.bulletGraphics.fillRect(bx - 1, by - 1, 2, 2);
+        this.bulletGraphics.fillStyle(0xffffff, 1.0);
+        this.bulletGraphics.fillRect(bx, by, 1, 1);
+      }
     }
   }
 
@@ -611,6 +774,11 @@ export class EnemyManager {
           particleManager.emitDebris(ex, ey, 0x1e3a8a, 8, 65);
           particleManager.emitCollapseFlash(ex, ey, 14);
           xpGained = ENEMY_CONFIG.types.POLICE_CAR.xp;
+        } else if (eType === ENEMY_TYPES.TANK) {
+          particleManager.emitDebris(ex, ey, 0x3a4a32, 12, 70);
+          particleManager.emitDebris(ex, ey, 0xf97316, 6, 50);
+          particleManager.emitCollapseFlash(ex, ey, 18);
+          xpGained = ENEMY_CONFIG.types.TANK.xp;
         }
 
         this.despawnEnemy(i);

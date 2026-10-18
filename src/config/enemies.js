@@ -21,10 +21,14 @@ export const ENEMY_CONFIG = {
   spawnRingInnerRadius: 260, // Just outside screen boundary
   spawnRingOuterRadius: 360,
 
+  // Navigation & Flow Field (Tahap 3A-2)
+  navCellSize: 8, // 8x8 px navigation grid
+  flowFieldUpdateInterval: 0.30, // Recalculate flow field every 0.3s
+
   // Projectile Tuning
   bulletBuildingDamage: 0.35, // Bullets that miss Kaiju damage city buildings
 
-  // Enemy Types Definitions
+  // Enemy Types Definitions (Adjusted composition: more tanks, fewer citizens)
   types: {
     CITIZEN: {
       id: 1,
@@ -36,7 +40,7 @@ export const ENEMY_CONFIG = {
       speedWander: 28, // Casual walk speed
       fleeDistance: 130, // Distance to Kaiju triggering panic
       xp: 10,
-      spawnWeight: 0.60
+      spawnWeight: 0.15 // Reduced (user: "terlalu banyak warga, seharusnya lebih banyak tank")
     },
     POLICE: {
       id: 2,
@@ -55,7 +59,7 @@ export const ENEMY_CONFIG = {
       separationDistance: 18, // Pushes other police away to form firing line
       separationForce: 45,
       xp: 25,
-      spawnWeight: 0.35
+      spawnWeight: 0.45 // Tactical infantry squads
     },
     POLICE_CAR: {
       id: 3,
@@ -67,7 +71,25 @@ export const ENEMY_CONFIG = {
       ramDamage: 6, // Damage dealt if car rams into Kaiju
       sirenToggleInterval: 0.12, // Flash rate between red & blue lightbars
       xp: 50,
-      spawnWeight: 0.05
+      spawnWeight: 0.10
+    },
+    TANK: {
+      id: 4,
+      name: 'Tank Militer',
+      width: 14,
+      height: 10,
+      hp: 25, // Heavily armored war machine
+      speed: 46, // Slower tread movement
+      shootRangeMin: 110,
+      shootRangeMax: 170, // Long-range heavy artillery
+      shootIntervalMin: 2.2,
+      shootIntervalMax: 3.5,
+      shellSpeed: 210,
+      shellDamage: 12, // High damage to Kaiju
+      shellBuildingDamage: 2.5, // Blasts chunks out of buildings!
+      shellLife: 1.2,
+      xp: 75,
+      spawnWeight: 0.30 // Prominent armored division
     }
   }
 };

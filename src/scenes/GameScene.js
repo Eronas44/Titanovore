@@ -9,14 +9,18 @@ import { Kaiju } from '../entities/Kaiju.js';
 import { Crowd } from '../entities/Crowd.js';
 import { ParticleManager } from '../effects/ParticleManager.js';
 import { EnemyManager, ENEMY_TYPES } from '../enemies/EnemyManager.js';
+import { NavGrid } from '../world/NavGrid.js';
+import { ENEMY_CONFIG } from '../config/enemies.js';
 
 /**
- * GameScene - Tahap 2B (Penghancuran Bangunan & Fisika Kerusakan)
+ * GameScene - Tahap 3A-2
  * Orchestrates:
  * - Kaiju body & tail trample damage on 4x4 px grid cells
+ * - NavGrid dual-layer walkability (infantry & inflated vehicle) and dynamic flow fields
  * - Building collapse dynamics (progressive wave shattering, falling debris splash, shockwaves)
  * - Particle effects (debris, billowing dust, blood splatters, collapse flashes)
  * - Crowd reactions (panic fleeing, squishing, car crushing)
+ * - Enemy navigation without wall-clipping and balanced threat composition (Tanks, Police, Cars, Citizens)
  * - Dynamic Kaiju trampling resistance/slowdown
  * - Debug keys: [F] Scale Up, [R] Clean World Restart, [1-4] Zone Teleport, [F3] HUD Toggle
  */
@@ -32,6 +36,7 @@ export class GameScene extends Phaser.Scene {
       humansKilled: 0,
       policeKilled: 0,
       carsDestroyed: 0,
+      tanksDestroyed: 0,
       xp: 0,
       survivalTime: 0
     };
@@ -53,6 +58,9 @@ export class GameScene extends Phaser.Scene {
     this.cityGenerator = new CityGenerator(WORLD_CONFIG.seed);
     this.cityData = this.cityGenerator.generate(this.cityGrid);
 
+    // 5b. Initialize 8x8 px Navigation Grid & Flow Field (Tahap 3A-2)
+    this.navGrid = new NavGrid(this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, ENEMY_CONFIG.navCellSize);
+
     // 6. Chunk Renderer (256x256 px chunks, dirty rect batch rendering, camera culling)
     this.chunkRenderer = new ChunkRenderer(this, this.cityData);
 
@@ -61,8 +69,8 @@ export class GameScene extends Phaser.Scene {
     const spawnY = WORLD_CONFIG.worldHeight / 2;
     this.kaiju = new Kaiju(this, spawnX, spawnY);
 
-    // 8. Spawn High-Performance Enemy & Threat Manager (Tahap 3A)
-    this.enemyManager = new EnemyManager(this, this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight);
+    // 8. Spawn High-Performance Enemy & Threat Manager (Tahap 3A-2)
+    this.enemyManager = new EnemyManager(this, this.cityGrid, this.navGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight);
 
     // 8b. Spawn Ambient Crowd (Ambient vehicles & decorative pedestrians)
     this.crowd = new Crowd(this, this.cityData);
@@ -173,9 +181,13 @@ export class GameScene extends Phaser.Scene {
     // 6. Re-create ChunkRenderer
     this.chunkRenderer = new ChunkRenderer(this, this.cityData);
 
+    // 6b. Re-create NavGrid (Tahap 3A-2)
+    this.navGrid = new NavGrid(this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, ENEMY_CONFIG.navCellSize);
+
     // 7. Reset EnemyManager & Crowd
     if (this.enemyManager) {
       this.enemyManager.cityGrid = this.cityGrid;
+      this.enemyManager.navGrid = this.navGrid;
       this.enemyManager.reset();
     }
     this.crowd.reset();
@@ -193,6 +205,7 @@ export class GameScene extends Phaser.Scene {
       humansKilled: 0,
       policeKilled: 0,
       carsDestroyed: 0,
+      tanksDestroyed: 0,
       xp: 0,
       survivalTime: 0
     };
@@ -212,7 +225,7 @@ export class GameScene extends Phaser.Scene {
     // Crisp dark panel
     this.hudBg = this.add.graphics();
     this.hudBg.fillStyle(0x0b0a10, 0.88);
-    this.hudBg.fillRoundedRect(0, 0, 172, 68, 3);
+    this.hudBg.fillRoundedRect(0, 0, 186, 70, 3);
     this.hudContainer.add(this.hudBg);
 
     // Health bar graphics
@@ -252,7 +265,7 @@ export class GameScene extends Phaser.Scene {
     this.hudText.setText(
       `HP: ${curHp}/${maxHp} | XP: ${this.stats.xp}\n` +
       `DESTRUCT: ${destructionPct}% | BLDGS: ${this.stats.buildingsDestroyed}\n` +
-      `CITIZENS: ${this.stats.humansKilled} | POLICE: ${this.stats.policeKilled}\n` +
+      `CITIZEN: ${this.stats.humansKilled} | POL: ${this.stats.policeKilled} | TANK: ${this.stats.tanksDestroyed}\n` +
       `SCALE: ${scale}x | FPS: ${fps} [F3] HUD\n` +
       `[F] Grow | [R] Reset | [1-4] Zones`
     );
@@ -260,10 +273,10 @@ export class GameScene extends Phaser.Scene {
     // Dynamic color health bar
     this.hudBarGraphics.clear();
     const hpRatio = Math.max(0, this.kaiju.hp / this.kaiju.maxHp);
-    const barW = 160;
+    const barW = 174;
     const barH = 5;
     const barX = 6;
-    const barY = 57;
+    const barY = 59;
 
     // Background track
     this.hudBarGraphics.fillStyle(0x18181b, 0.9);
@@ -384,7 +397,7 @@ export class GameScene extends Phaser.Scene {
       `WAKTU BERTAHAN: ${timeStr}\n` +
       `KOTA HANCUR: ${destructionPct}%\n` +
       `GEDUNG DIRATAKAN: ${this.stats.buildingsDestroyed}\n` +
-      `WARGA: ${this.stats.humansKilled} | POLISI: ${this.stats.policeKilled}\n` +
+      `WARGA: ${this.stats.humansKilled} | POLISI: ${this.stats.policeKilled} | TANK: ${this.stats.tanksDestroyed}\n` +
       `TOTAL XP: ${this.stats.xp}`
     );
 
@@ -425,7 +438,14 @@ export class GameScene extends Phaser.Scene {
     // 4. Process Progressive Building Collapse Waves
     this.updateCollapseWaves(dt);
 
-    // 5. Update Enemies & Threat Manager (Tahap 3A)
+    // 4b. Update Navigation Grid & Flow Fields (Tahap 3A-2)
+    // Flushes newly cleared rubble paths and recalculates BFS gradient vectors towards Kaiju
+    if (this.navGrid) {
+      this.navGrid.flushDirtyUpdates();
+      this.navGrid.updateFlowField(this.kaiju.x, this.kaiju.y, dt);
+    }
+
+    // 5. Update Enemies & Threat Manager (Tahap 3A-2)
     if (this.enemyManager) {
       this.enemyManager.update(this.cameras.main, dt, this.kaiju, this.particleManager);
     }
@@ -533,6 +553,8 @@ export class GameScene extends Phaser.Scene {
             this.stats.policeKilled++;
           } else if (eType === ENEMY_TYPES.POLICE_CAR) {
             this.stats.carsDestroyed++;
+          } else if (eType === ENEMY_TYPES.TANK) {
+            this.stats.tanksDestroyed++;
           }
         }
       );
@@ -559,6 +581,7 @@ export class GameScene extends Phaser.Scene {
    * In 'local' mode:
    * - Immediate neighbor cells take minor crack damage and display fracture textures.
    * - Small isolated cell fragments (<= 6 cells) collapse as small rubble via shallow bounded BFS.
+   * - NavGrid receives dirty updates so flattened buildings dynamically become new walkable shortcuts!
    * - Skyscrapers generate higher dust/debris without total collapse.
    * - Building is only marked destroyed when all alive cells reach 0.
    */
@@ -571,8 +594,11 @@ export class GameScene extends Phaser.Scene {
 
     this.stats.xp += GAME_CONFIG.destruction.xpPerCell;
 
-    // 1. Mark rubble on chunk canvas
+    // 1. Mark rubble on chunk canvas & notify NavGrid of newly walkable rubble
     this.chunkRenderer.markCellAsRubble(cell.worldX, cell.worldY, building.baseColor, isBodyTrample);
+    if (this.navGrid) {
+      this.navGrid.markDirtyCell(cell.worldX, cell.worldY);
+    }
 
     // 2. Debris & dust emission (scaled for skyscrapers)
     const dustMult = isSkyscraper ? (collapseConfig.skyscraperDustMultiplier || 1.8) : 1.0;
@@ -637,6 +663,9 @@ export class GameScene extends Phaser.Scene {
               building.aliveCells = Math.max(0, building.aliveCells - 1);
 
               this.chunkRenderer.markCellAsRubble(ic.worldX, ic.worldY, building.baseColor, false);
+              if (this.navGrid) {
+                this.navGrid.markDirtyCell(ic.worldX, ic.worldY);
+              }
               this.particleManager.emitDebris(ic.worldX, ic.worldY, building.baseColor, 2, 35);
               this.particleManager.emitDust(ic.worldX, ic.worldY, 1, 0.7);
               this.stats.xp += GAME_CONFIG.destruction.xpPerCell;

@@ -480,6 +480,57 @@ export class TextureGenerator {
         canvas.refresh();
       }
     }
+
+    // 4. Military Tank (14x10 px, facing Right)
+    if (!scene.textures.exists('enemy_tank')) {
+      const canvas = scene.textures.createCanvas('enemy_tank', 14, 10);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Heavy Caterpillar Tread Tracks (Top & Bottom)
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(0, 0, 12, 2); // Top tread
+      ctx.fillRect(0, 8, 12, 2); // Bottom tread
+
+      // Tread notches / bogie wheels
+      ctx.fillStyle = '#44403c';
+      for (let tx = 1; tx < 11; tx += 3) {
+        ctx.fillRect(tx, 0, 1, 2);
+        ctx.fillRect(tx, 8, 1, 2);
+      }
+
+      // Main Armored Hull (Olive drab camouflage)
+      ctx.fillStyle = '#3a4a32';
+      ctx.fillRect(1, 2, 10, 6);
+
+      // Armor plating highlights & shadows
+      ctx.fillStyle = '#4b5e41';
+      ctx.fillRect(2, 2, 9, 1); // Top hull highlight
+      ctx.fillStyle = '#283322';
+      ctx.fillRect(1, 7, 10, 1); // Bottom shadow
+
+      // Front sloped glacis plate
+      ctx.fillStyle = '#526647';
+      ctx.fillRect(9, 3, 2, 4);
+
+      // Rotating Turret Dome
+      ctx.fillStyle = '#2b3725';
+      ctx.fillRect(3, 3, 5, 4);
+      ctx.fillStyle = '#3c4c34';
+      ctx.fillRect(4, 3, 3, 1); // Turret top highlight
+      // Commander Hatch
+      ctx.fillStyle = '#1b2217';
+      ctx.fillRect(4, 4, 2, 2);
+
+      // Heavy Cannon Barrel (pointing East / Right)
+      ctx.fillStyle = '#222b1d';
+      ctx.fillRect(8, 4, 5, 2);
+      // Muzzle brake at tip
+      ctx.fillStyle = '#141a12';
+      ctx.fillRect(12, 3, 2, 4);
+
+      canvas.refresh();
+    }
   }
 
   /**
