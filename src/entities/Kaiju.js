@@ -289,6 +289,49 @@ export class Kaiju {
   }
 
   /**
+   * Removes a specific weapon's mutation sprite and layer
+   * @param {string} weaponId 
+   */
+  removeMutation(weaponId) {
+    if (this.mutationSprites.has(weaponId)) {
+      const sprite = this.mutationSprites.get(weaponId);
+      if (sprite) {
+        if (this.container && typeof this.container.remove === 'function') {
+          this.container.remove(sprite);
+        }
+        if (typeof sprite.destroy === 'function') {
+          sprite.destroy();
+        }
+      }
+      this.mutationSprites.delete(weaponId);
+    }
+  }
+
+  /**
+   * Sets visual layer for an evolved synergy weapon
+   * @param {string} evolutionId 
+   * @param {string} slot 
+   */
+  setEvolutionVisual(evolutionId, slot = 'body') {
+    const texKey = `evolution_${evolutionId}`;
+    if (!this.scene || !this.scene.textures || !this.scene.textures.exists(texKey)) {
+      return;
+    }
+
+    this.removeMutation(evolutionId);
+
+    const sprite = this.scene.add.sprite(0, 0, texKey);
+    sprite.setOrigin(0.5, 0.5);
+    if (slot === 'body') {
+      this.container.addAt(sprite, 0);
+    } else {
+      this.container.add(sprite);
+    }
+    this.mutationSprites.set(evolutionId, sprite);
+    this.layers.set(slot, { sprite, key: texKey });
+  }
+
+  /**
    * Updates tail spikes attached to snake-like trailing tail segments
    * @param {number} tier - 1, 3, or 5
    */

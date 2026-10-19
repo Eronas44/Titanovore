@@ -1,18 +1,13 @@
 import { CARD_CONFIG } from '../config/cards.js';
 import { WEAPON_CONFIG } from '../config/weapons.js';
 import { GAME_CONFIG } from '../config/game.js';
+import { EvolutionSystem } from './EvolutionSystem.js';
 
 /**
- * CardSystem.js - Tahap 4A-2
- * Pure Rogue-lite logic engine for card selection, build progression, and passive perks.
+ * CardSystem.js - Tahap 4A-2 & 4B-2
+ * Pure Rogue-lite logic engine for card selection, build progression, passive perks,
+ * and weapon synergy evolutions.
  * All visual rendering and interactive DOM button events are now delegated to UIManager (HTML/CSS).
- *
- * Features:
- * - Queued level-ups for rapid multi-level handling
- * - Cohesive build biasing (owned weapons appear more frequently)
- * - Strict eligibility filtering (no maxed cards, weapon slot cap of 6)
- * - Reroll and Skip mechanics with compensations
- * - RunState lifecycle (clean reset on death/revival)
  */
 export class CardSystem {
   /**
@@ -26,6 +21,9 @@ export class CardSystem {
     this.kaiju = kaiju;
     this.weaponSystem = weaponSystem;
     this.xpSystem = xpSystem;
+
+    // Synergy Evolution Engine (Tahap 4B-2)
+    this.evolutionSystem = new EvolutionSystem(scene, kaiju, weaponSystem, this);
 
     // Passive perk levels (1-5)
     this.passiveLevels = new Map();
@@ -82,6 +80,13 @@ export class CardSystem {
 
     const cards = this.rollCards();
 
+    // Auto-advance if all cards are maxed and no evolution available
+    if (cards.length === 0) {
+      this.kaiju.hp = Math.min(this.kaiju.maxHp, this.kaiju.hp + CARD_CONFIG.skipRewardHp);
+      this.presentNextLevelUp();
+      return;
+    }
+
     // Delegate presentation to HTML UIManager
     if (this.scene.uiManager) {
       this.scene.uiManager.showLevelUp(cards, {
@@ -99,7 +104,7 @@ export class CardSystem {
    * Rolls 3 distinct eligible cards based on weights and build synergy.
    * @returns {Array} Selected eligible card entries
    */
-  rollCards() {
+  rollCards(preserveEvolution = false) {
     const eligibleCards = [];
     const equippedWeaponCount = this.weaponSystem ? this.weaponSystem.equippedWeapons.size : 0;
 
@@ -119,6 +124,12 @@ export class CardSystem {
         continue;
       }
 
+      // Check for synergy hints (Tahap 4B-2)
+      if (this.evolutionSystem) {
+        const hints = this.evolutionSystem.getSynergyHints(card.weaponId || card.passiveKey);
+        card.synergyHints = (hints && hints.length > 0) ? hints : null;
+      }
+
       // Calculate weight based on rarity and owned build bonus
       const rarityData = CARD_CONFIG.rarities[card.rarity] || CARD_CONFIG.rarities.COMMON;
       let weight = rarityData.weight;
@@ -136,13 +147,36 @@ export class CardSystem {
       });
     }
 
-    // Select up to 3 distinct cards using roulette wheel selection with role diversity
     const chosen = [];
+
+    // Check if an evolution is eligible to be presented in slot 0 (Tahap 4B-2)
+    const eligibleEvo = this.evolutionSystem ? this.evolutionSystem.getEligibleEvolution() : null;
+    if (eligibleEvo) {
+      chosen.push({
+        isEvolution: true,
+        card: {
+          id: eligibleEvo.evolutionId,
+          name: eligibleEvo.name,
+          icon: eligibleEvo.icon,
+          rarity: 'EVOLUTION',
+          type: 'evolution',
+          descriptions: [eligibleEvo.description],
+          isEvolution: true,
+          primaryIngredient: eligibleEvo.primaryIngredient,
+          secondaryIngredient: eligibleEvo.secondaryIngredient,
+          evoData: eligibleEvo.evoData
+        },
+        currentLevel: 1,
+        nextLevel: 1,
+        weight: 9999,
+        rarityData: { name: 'EVOLUSI', color: '#ffd700', hex: 0xffd700 }
+      });
+    }
+
+    const targetCount = 3;
     const pool = [...eligibleCards];
 
-    for (let c = 0; c < 3; c++) {
-      if (pool.length === 0) break;
-
+    while (chosen.length < targetCount && pool.length > 0) {
       // Filter candidates to prevent offering 3 cards with the exact same role
       let candidates = pool;
       if (chosen.length === 2 && chosen[0].card.role && chosen[0].card.role === chosen[1].card.role) {
@@ -185,6 +219,18 @@ export class CardSystem {
     if (!this.isModalOpen || index >= this.currentDisplayedCards.length) return;
 
     const chosen = this.currentDisplayedCards[index];
+
+    // Handle Evolution card selection (Tahap 4B-2)
+    if (chosen.isEvolution || chosen.card?.isEvolution) {
+      const evoId = chosen.card.id;
+      const success = this.evolutionSystem ? this.evolutionSystem.applyEvolution(evoId) : false;
+      if (success && this.scene.uiManager) {
+        this.scene.uiManager.flashSlot('evolution', evoId);
+      }
+      this.presentNextLevelUp();
+      return;
+    }
+
     this.applyCard(chosen.card, chosen.nextLevel);
 
     // Visual feedback in UI & particle effect
@@ -433,6 +479,9 @@ export class CardSystem {
    */
   reset() {
     this.passiveLevels.clear();
+    if (this.evolutionSystem) {
+      this.evolutionSystem.reset();
+    }
     this.rerollsRemaining = CARD_CONFIG.rerollsPerRun;
     this.levelUpQueue = [];
     this.closeModal();

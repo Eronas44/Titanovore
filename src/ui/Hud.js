@@ -135,7 +135,12 @@ export class Hud {
       <div class="hud-bottom-bar">
         <!-- Bottom Left: Weapons & Passives Inventory -->
         <div class="hud-inventory-panel hud-panel">
-          <div class="inventory-header">SENJATA AKTIF (MAKS 6)</div>
+          <div class="inventory-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>SENJATA AKTIF (MAKS 6)</span>
+            <button class="hud-recipe-btn interactive" id="hud-toggle-recipe-btn" title="Lihat Resep Evolusi [TAB]">
+              ${ICONS.flask} RESEP [TAB]
+            </button>
+          </div>
           <div class="inventory-slots" id="hud-weapon-slots">
             <!-- 6 weapon boxes generated dynamically -->
           </div>
@@ -178,6 +183,14 @@ export class Hud {
     this.xpBadgeEl = this.hudLayer.querySelector('#hud-xp-badge');
     this.xpValEl = this.hudLayer.querySelector('#hud-xp-val');
     this.xpFillEl = this.hudLayer.querySelector('#hud-xp-fill');
+    this.recipeBtn = this.hudLayer.querySelector('#hud-toggle-recipe-btn');
+
+    if (this.recipeBtn) {
+      this.recipeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.onToggleRecipe) this.onToggleRecipe();
+      });
+    }
 
     // Pre-populate empty weapon slots
     this.initInventorySlots();
@@ -312,8 +325,8 @@ export class Hud {
    * Updates weapon and passive slots when inventory changes
    */
   updateInventory(weapons = [], passives = []) {
-    // Generate simple hash to check if inventory items/levels changed
-    const wHash = weapons.map(w => `${w.id}:${w.level}`).join('|');
+    // Generate simple hash to check if inventory items/levels/evolution changed
+    const wHash = weapons.map(w => `${w.id}:${w.level}:${w.isEvolution ? 1 : 0}`).join('|');
     if (wHash !== this.cachedState.weaponsHash) {
       this.cachedState.weaponsHash = wHash;
       this.renderWeaponSlots(weapons);
@@ -336,9 +349,15 @@ export class Hud {
       if (i < weapons.length) {
         const w = weapons[i];
         slot.setAttribute('data-weapon-id', w.id);
+        if (w.isEvolution) {
+          slot.classList.add('evolution-slot');
+        }
+        const badgeText = w.isEvolution ? 'EVO' : `L${w.level}`;
+        const badgeClass = w.isEvolution ? 'slot-badge badge-gold' : 'slot-badge';
+
         slot.innerHTML = `
           <div class="slot-icon">${getIconSvg(w.id)}</div>
-          <span class="slot-badge">L${w.level}</span>
+          <span class="${badgeClass}">${badgeText}</span>
           <div class="slot-cooldown-overlay" id="cd-overlay-${i}"></div>
         `;
       } else {
@@ -426,6 +445,14 @@ export class Hud {
       this.bannerContainer.classList.remove('visible');
       this.bannerTimeout = null;
     }, durationMs);
+  }
+
+  /**
+   * Shows dedicated dramatic Evolution Banner
+   * @param {string} name 
+   */
+  showEvolutionBanner(name) {
+    this.showEventBanner('EVOLUSI SENJATA!', `SINERGI "${name.toUpperCase()}" TELAH AKTIF!`, 2200);
   }
 
   /**

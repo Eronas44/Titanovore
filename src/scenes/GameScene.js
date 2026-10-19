@@ -19,6 +19,7 @@ import { WeaponSystem } from '../weapons/WeaponSystem.js';
 import { WEAPON_CONFIG } from '../config/weapons.js';
 import { CardSystem } from '../cards/CardSystem.js';
 import { CARD_CONFIG } from '../config/cards.js';
+import { EVOLUTION_CONFIG } from '../config/evolutions.js';
 import { UIManager } from '../ui/UIManager.js';
 
 /**
@@ -116,10 +117,15 @@ export class GameScene extends Phaser.Scene {
     this.setupCamera();
 
     // 10. UI Manager (Crisp HTML/CSS Overlay over canvas)
-    this.uiManager = new UIManager('ui-root');
+    this.uiManager = new UIManager('ui-root', () => {
+      return this.cardSystem && this.cardSystem.evolutionSystem
+        ? this.cardSystem.evolutionSystem.getAllRecipesStatus()
+        : [];
+    });
     this.isExtendedHud = false;
+    this.evolutionDebugIndex = 0;
 
-    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga)
+    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga, M: Evolution Cheat)
     this.setupDebugKeys();
   }
 
@@ -240,6 +246,42 @@ export class GameScene extends Phaser.Scene {
       event.preventDefault();
       if (this.xpSystem) {
         this.xpSystem.addDirectXp(500);
+      }
+    });
+
+    // 10. [TAB] Key: Toggle Recipe Book
+    this.input.keyboard.on('keydown-TAB', (event) => {
+      event.preventDefault();
+      if (this.uiManager) {
+        this.uiManager.toggleRecipeBook();
+      }
+    });
+
+    // 11. [M] Key: (Temporary Debug) Cycle through and grant evolution ingredients
+    this.input.keyboard.on('keydown-M', (event) => {
+      event.preventDefault();
+      const evos = EVOLUTION_CONFIG.evolutions;
+      if (!evos || evos.length === 0) return;
+
+      const evo = evos[this.evolutionDebugIndex % evos.length];
+      this.evolutionDebugIndex++;
+
+      // Grant Primary Ingredient at required min level
+      if (evo.primaryIngredient.type === 'weapon') {
+        this.weaponSystem.equipWeapon(evo.primaryIngredient.id, evo.primaryIngredient.minLevel);
+      } else {
+        this.cardSystem.passiveLevels.set(evo.primaryIngredient.id, evo.primaryIngredient.minLevel);
+      }
+
+      // Grant Secondary Ingredient at required min level
+      if (evo.secondaryIngredient.type === 'weapon') {
+        this.weaponSystem.equipWeapon(evo.secondaryIngredient.id, evo.secondaryIngredient.minLevel);
+      } else {
+        this.cardSystem.passiveLevels.set(evo.secondaryIngredient.id, evo.secondaryIngredient.minLevel);
+      }
+
+      if (this.uiManager) {
+        this.uiManager.showEventBanner('DEBUG CHEAT [M]', `BAHAN "${evo.name.toUpperCase()}" DISIAPKAN!`, 1800);
       }
     });
   }
@@ -409,12 +451,15 @@ export class GameScene extends Phaser.Scene {
     const weapons = [];
     if (this.weaponSystem) {
       for (const [id, entry] of this.weaponSystem.equippedWeapons.entries()) {
+        const isEvolution = !!entry.isEvolution;
         const def = WEAPON_CONFIG.weapons[id];
         const lvlObj = def && def.levels && def.levels[entry.level - 1];
-        const baseCd = lvlObj ? lvlObj.cooldown : (def ? def.cooldown : 1.0);
+        const baseCd = isEvolution
+          ? (entry.evoData?.stats?.cooldown || 1.5)
+          : (lvlObj ? lvlObj.cooldown : (def ? def.cooldown : 1.0));
         const cdTime = baseCd * (this.weaponSystem.cooldownMultiplier || 1.0);
         const cdRatio = cdTime > 0 ? (entry.timer / cdTime) : 0;
-        weapons.push({ id, level: entry.level, cdRatio });
+        weapons.push({ id, level: entry.level, cdRatio, isEvolution });
       }
     }
 

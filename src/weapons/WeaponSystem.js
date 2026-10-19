@@ -125,6 +125,59 @@ export class WeaponSystem {
   }
 
   /**
+   * Unequips a weapon, removing it from inventory and clearing visual mutations.
+   * @param {string} weaponId 
+   */
+  unequipWeapon(weaponId) {
+    if (this.equippedWeapons.has(weaponId)) {
+      this.equippedWeapons.delete(weaponId);
+    }
+    if (this.kaiju) {
+      if (typeof this.kaiju.removeMutation === 'function') {
+        this.kaiju.removeMutation(weaponId);
+      }
+      if (weaponId === 'electric_skin' && this.kaiju.hasLayer && this.kaiju.hasLayer('skin_overlay')) {
+        this.kaiju.removeLayer('skin_overlay');
+      }
+      if (weaponId === 'spiked_tail' && typeof this.kaiju.clearTailSpikes === 'function') {
+        this.kaiju.clearTailSpikes();
+      }
+    }
+    if (weaponId === 'body_spikes') {
+      this.thornDamage = 0;
+      this.thornRadius = 0;
+    }
+  }
+
+  /**
+   * Equips a synergy evolved weapon.
+   * @param {string} evolutionId 
+   * @param {Object} evoData 
+   */
+  equipEvolvedWeapon(evolutionId, evoData) {
+    this.equippedWeapons.set(evolutionId, {
+      id: evolutionId,
+      isEvolution: true,
+      level: 1,
+      timer: 0.15,
+      firingTimer: 0,
+      isFiring: false,
+      evoData: evoData,
+      lightningTimer: 0,
+      sweepAngle: 0,
+      baseSweepAngle: 0
+    });
+
+    if (evolutionId === 'thorn_bastion') {
+      if (this.kaiju) {
+        this.kaiju.setEnergyShield(evoData.stats?.shieldCapacity || 300, evoData.stats?.rechargeDelay || 3.5);
+        this.kaiju.reflectChance = evoData.stats?.reflectChance || 0.70;
+        this.kaiju.reflectMultiplier = evoData.stats?.reflectMultiplier || 2.2;
+      }
+    }
+  }
+
+  /**
    * Gets current level of an equipped weapon (0 if not equipped)
    * @param {string} weaponId 
    * @returns {number}
@@ -210,6 +263,11 @@ export class WeaponSystem {
     // 1. Update active weapons safely per-weapon
     for (const [id, entry] of this.equippedWeapons.entries()) {
       try {
+        if (entry.isEvolution) {
+          this.updateEvolution(id, entry, dt);
+          continue;
+        }
+
         const wDef = WEAPON_CONFIG.weapons[id];
         if (!wDef) continue;
 
@@ -509,6 +567,42 @@ export class WeaponSystem {
   triggerThornBurst(damageTaken = 20) {
     const kx = this.kaiju.x;
     const ky = this.kaiju.y;
+
+    // Check Thorn Bastion evolution first
+    if (this.equippedWeapons.has('thorn_bastion')) {
+      const evo = this.equippedWeapons.get('thorn_bastion');
+      const stats = evo.evoData?.stats || {};
+      const dmg = (stats.eruptionDamage || 90) * this.getEffectiveDamageMultiplier();
+      const spikeCount = stats.eruptionSpikes || 24;
+      const blastRadius = (stats.eruptionRadius || 95) * this.kaiju.currentScale;
+
+      for (let s = 0; s < spikeCount; s++) {
+        const angle = (s / spikeCount) * Math.PI * 2;
+        const vx = Math.cos(angle) * 380;
+        const vy = Math.sin(angle) * 380;
+        this.spawnProjectile(kx, ky, vx, vy, dmg * 0.5, true, true, 2.0, 0x10b981, 0.55);
+      }
+
+      this.enemyManager.queryEnemiesInRadius(kx, ky, blastRadius, (idx) => {
+        if (!this.enemyManager.active[idx]) return;
+        this.enemyManager.damageEnemy(idx, dmg, true);
+      });
+
+      this.visualEffects.push({
+        type: 'shockwave',
+        x: kx,
+        y: ky,
+        radius: blastRadius,
+        life: 0.22,
+        maxLife: 0.22,
+        color: 0x10b981
+      });
+
+      if (this.particleManager) {
+        this.particleManager.emitDebris(kx, ky, 0x10b981, 16, 75);
+      }
+      return;
+    }
 
     // Check Body Spikes weapon level 5
     const bodySpikesLevel = this.getWeaponLevel('body_spikes');
@@ -957,8 +1051,534 @@ export class WeaponSystem {
   }
 
   // =========================================================================
+  // EVOLUTION SYNERGY WEAPONS (Tahap 4B-2)
+  // =========================================================================
+
+  /**
+   * Routes execution for synergy evolved weapons
+   */
+  updateEvolution(id, entry, dt) {
+    switch (id) {
+      case 'plasma_storm':
+        this.updatePlasmaStorm(entry, dt);
+        break;
+      case 'lightning_tail':
+        this.executeLightningTail(entry, dt);
+        break;
+      case 'heavy_artillery':
+        this.executeHeavyArtillery(entry, dt);
+        break;
+      case 'cataclysm_quake':
+        this.executeCataclysmQuake(entry, dt);
+        break;
+      case 'annihilation_laser':
+        this.updateAnnihilationLaser(entry, dt);
+        break;
+      case 'thorn_bastion':
+        this.updateThornBastion(entry, dt);
+        break;
+    }
+  }
+
+  // 1. BADAI PLASMA (Napas Api + Kulit Listrik)
+  updatePlasmaStorm(entry, dt) {
+    const stats = entry.evoData?.stats || {};
+    const scale = this.kaiju.currentScale;
+    const radius = (stats.radius || 125) * scale * this.rangeMultiplier;
+    const auraDps = (stats.auraDamage || 55) * this.getEffectiveDamageMultiplier();
+    const lDmg = (stats.lightningDamage || 125) * this.getEffectiveDamageMultiplier();
+    const lRange = (stats.lightningRange || 240) * this.rangeMultiplier;
+
+    const kx = this.kaiju.x;
+    const ky = this.kaiju.y;
+
+    // 1. Aura Tick (area burn)
+    entry.timer -= dt;
+    if (entry.timer <= 0) {
+      const interval = stats.cooldown || 0.12;
+      entry.timer = interval;
+      const tickDmg = auraDps * interval;
+
+      this.enemyManager.queryEnemiesInRadius(kx, ky, radius, (idx) => {
+        if (!this.enemyManager.active[idx]) return;
+        this.enemyManager.damageEnemy(idx, tickDmg, true); // Ground & air
+      });
+
+      this.damageBuildingsInRadius(kx, ky, radius, tickDmg * (stats.buildingDamageMultiplier || 3.2) * 0.25);
+    }
+
+    // Render plasma aura rings
+    this.attackGraphics.lineStyle(2.5, 0x06b6d4, 0.6);
+    this.attackGraphics.strokeCircle(kx, ky, radius);
+    this.attackGraphics.lineStyle(1.5, 0xd946ef, 0.5);
+    this.attackGraphics.strokeCircle(kx, ky, radius * 0.72);
+
+    // 2. Strongest bolt to furthest enemy in range
+    entry.lightningTimer = (entry.lightningTimer || 0) - dt;
+    if (entry.lightningTimer <= 0) {
+      entry.lightningTimer = stats.lightningInterval || 0.9;
+
+      let farthestEnemy = null;
+      let farthestDistSq = 0;
+
+      this.enemyManager.queryEnemiesInRadius(kx, ky, lRange, (idx, dx, dy) => {
+        if (!this.enemyManager.active[idx]) return;
+        const dSq = dx * dx + dy * dy;
+        if (dSq > farthestDistSq) {
+          farthestDistSq = dSq;
+          farthestEnemy = { idx, x: this.enemyManager.x[idx], y: this.enemyManager.y[idx] };
+        }
+      });
+
+      if (farthestEnemy) {
+        this.enemyManager.damageEnemy(farthestEnemy.idx, lDmg, true);
+        this.visualEffects.push({
+          type: 'plasma_lightning',
+          startX: kx,
+          startY: ky,
+          endX: farthestEnemy.x,
+          endY: farthestEnemy.y,
+          life: 0.22,
+          maxLife: 0.22,
+          color: 0xd946ef
+        });
+        if (this.particleManager) {
+          this.particleManager.emitSparks(farthestEnemy.x, farthestEnemy.y, 0xd946ef, 8, 45);
+        }
+      }
+    }
+  }
+
+  // 2. EKOR PETIR (Ekor Berduri + Kulit Listrik)
+  executeLightningTail(entry, dt) {
+    entry.timer -= dt;
+    if (entry.timer > 0) return;
+
+    const stats = entry.evoData?.stats || {};
+    const cd = (stats.cooldown || 1.15) * this.cooldownMultiplier;
+    entry.timer = cd;
+
+    const kx = this.kaiju.x;
+    const ky = this.kaiju.y;
+    const reach = (stats.range || 110) * this.kaiju.currentScale * this.rangeMultiplier;
+    const damage = (stats.damage || 65) * this.getEffectiveDamageMultiplier();
+    const chainDmg = (stats.chainDamage || 48) * this.getEffectiveDamageMultiplier();
+    const maxJumps = stats.chainJumps || 6;
+    const jumpRadius = stats.jumpRadius || 95;
+
+    // 360 sweep around Kaiju
+    let closestEnemy = null;
+    let closestDistSq = Infinity;
+
+    this.enemyManager.queryEnemiesInRadius(kx, ky, reach + 15, (idx, dx, dy) => {
+      if (!this.enemyManager.active[idx]) return;
+      this.enemyManager.damageEnemy(idx, damage, true);
+      const dSq = dx * dx + dy * dy;
+      if (dSq < closestDistSq) {
+        closestDistSq = dSq;
+        closestEnemy = { idx, x: this.enemyManager.x[idx], y: this.enemyManager.y[idx] };
+      }
+    });
+
+    this.damageBuildingsInArc(kx, ky, 0, reach, Math.PI, damage * (stats.buildingDamageMultiplier || 3.8) * 0.25);
+
+    this.visualEffects.push({
+      type: 'shockwave',
+      x: kx,
+      y: ky,
+      radius: reach,
+      life: 0.2,
+      maxLife: 0.2,
+      color: 0x38bdf8
+    });
+
+    // Chain lightning from closest enemy
+    if (closestEnemy) {
+      const visited = new Set([closestEnemy.idx]);
+      let currentSource = closestEnemy;
+
+      for (let jump = 0; jump < maxJumps; jump++) {
+        let nextTarget = null;
+        let nextDistSq = Infinity;
+
+        this.enemyManager.queryEnemiesInRadius(currentSource.x, currentSource.y, jumpRadius, (nIdx, dx, dy) => {
+          if (!this.enemyManager.active[nIdx] || visited.has(nIdx)) return;
+          const dSq = dx * dx + dy * dy;
+          if (dSq < nextDistSq) {
+            nextDistSq = dSq;
+            nextTarget = { idx: nIdx, x: this.enemyManager.x[nIdx], y: this.enemyManager.y[nIdx] };
+          }
+        });
+
+        if (!nextTarget) break;
+
+        visited.add(nextTarget.idx);
+        this.enemyManager.damageEnemy(nextTarget.idx, chainDmg, true);
+
+        this.visualEffects.push({
+          type: 'plasma_lightning',
+          startX: currentSource.x,
+          startY: currentSource.y,
+          endX: nextTarget.x,
+          endY: nextTarget.y,
+          life: 0.16,
+          maxLife: 0.16,
+          color: 0x67e8f9
+        });
+
+        if (this.particleManager) {
+          this.particleManager.emitSparks(nextTarget.x, nextTarget.y, 0x67e8f9, 4, 30);
+        }
+
+        currentSource = nextTarget;
+      }
+    }
+  }
+
+  // 3. ARTILERI BERAT (Meriam Punggung + Roket Punggung)
+  executeHeavyArtillery(entry, dt) {
+    entry.timer -= dt;
+    if (entry.timer > 0) return;
+
+    const stats = entry.evoData?.stats || {};
+    const cd = (stats.cooldown || 2.7) * this.cooldownMultiplier;
+    entry.timer = cd;
+
+    const kx = this.kaiju.x;
+    const ky = this.kaiju.y;
+    const range = (stats.range || 330) * this.rangeMultiplier;
+    const damage = (stats.damage || 195) * this.getEffectiveDamageMultiplier();
+    const blastRadius = stats.blastRadius || 80;
+
+    // Find densest cluster within range
+    let bestX = kx + Math.cos(this.kaiju.rotation || 0) * (range * 0.7);
+    let bestY = ky + Math.sin(this.kaiju.rotation || 0) * (range * 0.7);
+    let maxClusterCount = 0;
+
+    if (this.enemyManager && typeof this.enemyManager.queryEnemiesInRadius === 'function') {
+      const candidates = [];
+      this.enemyManager.queryEnemiesInRadius(kx, ky, range, (idx) => {
+        if (!this.enemyManager.active[idx]) return;
+        candidates.push({ x: this.enemyManager.x[idx], y: this.enemyManager.y[idx] });
+      });
+
+      if (candidates.length > 0) {
+        for (let i = 0; i < Math.min(candidates.length, 12); i++) {
+          const c = candidates[i];
+          let neighborCount = 0;
+          for (let j = 0; j < candidates.length; j++) {
+            const dx = candidates[j].x - c.x;
+            const dy = candidates[j].y - c.y;
+            if (dx * dx + dy * dy <= 3600) neighborCount++;
+          }
+          if (neighborCount > maxClusterCount) {
+            maxClusterCount = neighborCount;
+            bestX = c.x;
+            bestY = c.y;
+          }
+        }
+      }
+    }
+
+    const angle = Math.atan2(bestY - ky, bestX - kx);
+    const speed = stats.shellSpeed || 270;
+    const dist = Math.hypot(bestX - kx, bestY - ky);
+    const flightTime = Math.max(0.35, dist / speed);
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed;
+
+    this.spawnProjectile(
+      kx, ky, vx, vy,
+      damage,
+      true, true,
+      stats.buildingDamageMultiplier || 5.8,
+      0xf59e0b,
+      flightTime,
+      true,
+      blastRadius,
+      -1,
+      0,
+      bestX,
+      bestY
+    );
+
+    if (this.particleManager) {
+      this.particleManager.emitDebris(kx, ky, 0xf59e0b, 12, 60);
+      if (typeof this.particleManager.emitCollapseFlash === 'function') {
+        this.particleManager.emitCollapseFlash(kx, ky, 25);
+      }
+    }
+  }
+
+  // 4. GEMPA BUMI (Injakan Getar + Cakar)
+  executeCataclysmQuake(entry, dt) {
+    entry.timer -= dt;
+    if (entry.timer > 0) return;
+
+    const stats = entry.evoData?.stats || {};
+    const cd = (stats.cooldown || 1.75) * this.cooldownMultiplier;
+    entry.timer = cd;
+
+    const kx = this.kaiju.x;
+    const ky = this.kaiju.y;
+    const rot = this.kaiju.rotation || 0;
+    const scale = this.kaiju.currentScale;
+    const fLen = (stats.fissureLength || 170) * scale * this.rangeMultiplier;
+    const fWidth = (stats.fissureWidth || 36) * scale;
+    const shockRadius = (stats.shockwaveRadius || 105) * scale;
+    const damage = (stats.damage || 95) * this.getEffectiveDamageMultiplier();
+    const slowFactor = stats.slowFactor || 0.35;
+
+    const endX = kx + Math.cos(rot) * fLen;
+    const endY = ky + Math.sin(rot) * fLen;
+
+    // Circular shockwave around Kaiju (ground only)
+    this.enemyManager.queryEnemiesInRadius(kx, ky, shockRadius, (idx) => {
+      if (!this.enemyManager.active[idx]) return;
+      if (this.enemyManager.isAir[idx] === 1) return;
+      this.enemyManager.damageEnemy(idx, damage * 0.7, false);
+      this.enemyManager.vx[idx] *= slowFactor;
+      this.enemyManager.vy[idx] *= slowFactor;
+    });
+
+    this.visualEffects.push({
+      type: 'shockwave',
+      x: kx,
+      y: ky,
+      radius: shockRadius,
+      life: 0.25,
+      maxLife: 0.25,
+      color: 0xf97316
+    });
+
+    // Fissure line through ground
+    const dx = endX - kx;
+    const dy = endY - ky;
+    const lineLenSq = dx * dx + dy * dy;
+
+    if (lineLenSq > 0) {
+      this.enemyManager.queryEnemiesInRadius(kx + dx * 0.5, ky + dy * 0.5, fLen * 0.6 + 20, (idx) => {
+        if (!this.enemyManager.active[idx]) return;
+        if (this.enemyManager.isAir[idx] === 1) return;
+        const ex = this.enemyManager.x[idx];
+        const ey = this.enemyManager.y[idx];
+        const t = Math.max(0, Math.min(1, ((ex - kx) * dx + (ey - ky) * dy) / lineLenSq));
+        const px = kx + t * dx;
+        const py = ky + t * dy;
+        const distSq = (ex - px) * (ex - px) + (ey - py) * (ey - py);
+        if (distSq <= (fWidth * 0.5) * (fWidth * 0.5)) {
+          this.enemyManager.damageEnemy(idx, damage, false);
+          this.enemyManager.vx[idx] *= slowFactor;
+          this.enemyManager.vy[idx] *= slowFactor;
+        }
+      });
+    }
+
+    this.damageBuildingsInLine(kx, ky, endX, endY, fWidth, damage * (stats.buildingDamageMultiplier || 6.2) * 0.25);
+
+    this.visualEffects.push({
+      type: 'fissure',
+      startX: kx,
+      startY: ky,
+      endX,
+      endY,
+      width: fWidth,
+      life: 0.55,
+      maxLife: 0.55,
+      color: 0xf97316
+    });
+
+    if (this.scene && this.scene.cameras && this.scene.cameras.main) {
+      this.scene.cameras.main.shake(220, 0.007);
+    }
+  }
+
+  // 5. LASER PENGHANCUR (Mata Laser + Meriam Punggung)
+  updateAnnihilationLaser(entry, dt) {
+    const stats = entry.evoData?.stats || {};
+    const cd = (stats.cooldown || 3.1) * this.cooldownMultiplier;
+    const sweepDuration = stats.sweepDuration || 1.5;
+    const sweepArcDeg = stats.sweepArc || 75;
+    const reach = (stats.range || 230) * this.rangeMultiplier;
+    const dps = (stats.damagePerSec || 175) * this.getEffectiveDamageMultiplier();
+    const beamWidth = stats.beamWidth || 9;
+
+    if (!entry.isFiring) {
+      entry.timer -= dt;
+      if (entry.timer <= 0) {
+        entry.isFiring = true;
+        entry.firingTimer = sweepDuration;
+        entry.baseSweepAngle = this.kaiju.rotation || 0;
+      }
+      return;
+    }
+
+    entry.firingTimer -= dt;
+    if (entry.firingTimer <= 0) {
+      entry.isFiring = false;
+      entry.timer = cd;
+      return;
+    }
+
+    const progress = 1 - (entry.firingTimer / sweepDuration);
+    const sweepRad = Phaser.Math.DegToRad(sweepArcDeg);
+    const currentAngle = entry.baseSweepAngle + (progress - 0.5) * sweepRad;
+
+    const kx = this.kaiju.x;
+    const ky = this.kaiju.y;
+    const endX = kx + Math.cos(currentAngle) * reach;
+    const endY = ky + Math.sin(currentAngle) * reach;
+
+    const dx = endX - kx;
+    const dy = endY - ky;
+    const lineLenSq = dx * dx + dy * dy;
+
+    if (lineLenSq > 0) {
+      const frameDmg = dps * dt;
+      this.enemyManager.queryEnemiesInRadius(kx + dx * 0.5, ky + dy * 0.5, reach * 0.6 + 10, (idx) => {
+        if (!this.enemyManager.active[idx]) return;
+        const ex = this.enemyManager.x[idx];
+        const ey = this.enemyManager.y[idx];
+        const t = Math.max(0, Math.min(1, ((ex - kx) * dx + (ey - ky) * dy) / lineLenSq));
+        const px = kx + t * dx;
+        const py = ky + t * dy;
+        const distSq = (ex - px) * (ex - px) + (ey - py) * (ey - py);
+        if (distSq <= (beamWidth + 10) * (beamWidth + 10)) {
+          this.enemyManager.damageEnemy(idx, frameDmg, true);
+        }
+      });
+
+      this.damageBuildingsInLine(kx, ky, endX, endY, beamWidth + 6, frameDmg * (stats.buildingDamageMultiplier || 5.0) * 0.35);
+    }
+
+    this.attackGraphics.lineStyle(beamWidth * 2.2, 0xec4899, 0.4);
+    this.attackGraphics.lineBetween(kx, ky, endX, endY);
+    this.attackGraphics.lineStyle(beamWidth, 0x8b5cf6, 0.85);
+    this.attackGraphics.lineBetween(kx, ky, endX, endY);
+    this.attackGraphics.lineStyle(Math.max(2, beamWidth * 0.3), 0xffffff, 1.0);
+    this.attackGraphics.lineBetween(kx, ky, endX, endY);
+
+    this.attackGraphics.fillStyle(0xec4899, 0.8);
+    this.attackGraphics.fillCircle(endX, endY, 6);
+    this.attackGraphics.fillStyle(0xffffff, 1.0);
+    this.attackGraphics.fillCircle(endX, endY, 3);
+  }
+
+  // 6. BENTENG BERDURI (Duri Tubuh + Perisai Energi)
+  updateThornBastion(entry, dt) {
+    const stats = entry.evoData?.stats || {};
+    const kx = this.kaiju.x;
+    const ky = this.kaiju.y;
+
+    entry.timer -= dt;
+    if (entry.timer <= 0) {
+      entry.timer = 1.2 * this.cooldownMultiplier;
+
+      const blastRadius = (stats.eruptionRadius || 95) * this.kaiju.currentScale;
+      const pulseDmg = (stats.passiveRetaliationDmg || 45) * this.getEffectiveDamageMultiplier();
+
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const vx = Math.cos(angle) * 340;
+        const vy = Math.sin(angle) * 340;
+        this.spawnProjectile(kx, ky, vx, vy, pulseDmg * 0.6, true, true, 1.5, 0x10b981, 0.45);
+      }
+
+      this.visualEffects.push({
+        type: 'shockwave',
+        x: kx,
+        y: ky,
+        radius: blastRadius,
+        life: 0.18,
+        maxLife: 0.18,
+        color: 0x10b981
+      });
+    }
+
+    if (this.kaiju && this.kaiju.maxShield < (stats.shieldCapacity || 300)) {
+      this.kaiju.setEnergyShield(stats.shieldCapacity || 300, stats.rechargeDelay || 3.5);
+      this.kaiju.reflectChance = stats.reflectChance || 0.70;
+      this.kaiju.reflectMultiplier = stats.reflectMultiplier || 2.2;
+    }
+  }
+
+  // =========================================================================
   // UTILITY & PROJECTILE UPDATES
   // =========================================================================
+
+  damageBuildingsInLine(x1, y1, x2, y2, width, cellDmg) {
+    if (!this.cityGrid) return;
+    const cg = this.cityGrid;
+    const cellSize = cg.cellSize || 4;
+    const minX = Math.min(x1, x2) - width;
+    const maxX = Math.max(x1, x2) + width;
+    const minY = Math.min(y1, y2) - width;
+    const maxY = Math.max(y1, y2) + width;
+    const minCol = Math.max(0, Math.floor(minX / cellSize));
+    const maxCol = Math.min(cg.cols - 1, Math.floor(maxX / cellSize));
+    const minRow = Math.max(0, Math.floor(minY / cellSize));
+    const maxRow = Math.min(cg.rows - 1, Math.floor(maxY / cellSize));
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lineLenSq = dx * dx + dy * dy;
+    if (lineLenSq === 0) return;
+
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        const cellIdx = row * cg.cols + col;
+        if (cg.types[cellIdx] < CELL_TYPES.RESIDENTIAL_LOW || cg.types[cellIdx] > CELL_TYPES.LANDMARK) continue;
+        if (cg.hp[cellIdx] <= 0) continue;
+
+        const cx = col * cellSize + cellSize / 2;
+        const cy = row * cellSize + cellSize / 2;
+        const t = Math.max(0, Math.min(1, ((cx - x1) * dx + (cy - y1) * dy) / lineLenSq));
+        const projX = x1 + t * dx;
+        const projY = y1 + t * dy;
+        const distSq = (cx - projX) * (cx - projX) + (cy - projY) * (cy - projY);
+
+        if (distSq <= (width * 0.5) * (width * 0.5)) {
+          const res = cg.damageCell(col, row, cellDmg * this.buildingDmgMultiplier);
+          if (res && res.destroyed && this.scene && typeof this.scene.onCellDestroyed === 'function') {
+            this.scene.onCellDestroyed({ col, row, worldX: cx, worldY: cy }, res.building, false);
+          }
+        }
+      }
+    }
+  }
+
+  damageBuildingsInRadius(x, y, radius, cellDmg) {
+    if (!this.cityGrid) return;
+    const cg = this.cityGrid;
+    const cellSize = cg.cellSize || 4;
+    const cellRadius = Math.ceil(radius / cellSize);
+    const centerCol = Math.floor(x / cellSize);
+    const centerRow = Math.floor(y / cellSize);
+    const minCol = Math.max(0, centerCol - cellRadius);
+    const maxCol = Math.min(cg.cols - 1, centerCol + cellRadius);
+    const minRow = Math.max(0, centerRow - cellRadius);
+    const maxRow = Math.min(cg.rows - 1, centerRow + cellRadius);
+    const r2 = radius * radius;
+
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        const cellIdx = row * cg.cols + col;
+        if (cellIdx < 0 || cellIdx >= cg.totalCells) continue;
+        if (cg.types[cellIdx] < CELL_TYPES.RESIDENTIAL_LOW || cg.types[cellIdx] > CELL_TYPES.LANDMARK) continue;
+        if (cg.hp[cellIdx] <= 0) continue;
+
+        const cx = col * cellSize + cellSize / 2;
+        const cy = row * cellSize + cellSize / 2;
+        const distSq = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+        if (distSq <= r2) {
+          const res = cg.damageCell(col, row, cellDmg * this.buildingDmgMultiplier);
+          if (res && res.destroyed && this.scene && typeof this.scene.onCellDestroyed === 'function') {
+            this.scene.onCellDestroyed({ col, row, worldX: cx, worldY: cy }, res.building, false);
+          }
+        }
+      }
+    }
+  }
 
   damageBuildingsInArc(kx, ky, angle, reach, halfArc, cellDmg) {
     const cg = this.cityGrid;
@@ -1032,6 +1652,24 @@ export class WeaponSystem {
         const currentR = fx.radius * progress;
         this.attackGraphics.lineStyle(2.5, fx.color, 1 - progress);
         this.attackGraphics.strokeCircle(fx.x, fx.y, currentR);
+      } else if (fx.type === 'fissure') {
+        const alpha = Math.max(0, 1 - progress);
+        this.attackGraphics.lineStyle(Math.max(2, (fx.width || 20) * (1 - progress * 0.4)), fx.color || 0xf97316, alpha);
+        this.attackGraphics.lineBetween(fx.startX, fx.startY, fx.endX, fx.endY);
+        // Inner molten hot crack
+        this.attackGraphics.lineStyle(Math.max(1, (fx.width || 20) * 0.25 * (1 - progress)), 0xfef08a, alpha);
+        this.attackGraphics.lineBetween(fx.startX, fx.startY, fx.endX, fx.endY);
+      } else if (fx.type === 'plasma_lightning') {
+        const alpha = Math.max(0, 1 - progress);
+        this.attackGraphics.lineStyle(2.5, fx.color || 0x38bdf8, alpha);
+        // 2-segment jagged lightning
+        const mx = (fx.startX + fx.endX) * 0.5 + (Math.sin(progress * 20) * 16);
+        const my = (fx.startY + fx.endY) * 0.5 + (Math.cos(progress * 20) * 16);
+        this.attackGraphics.beginPath();
+        this.attackGraphics.moveTo(fx.startX, fx.startY);
+        this.attackGraphics.lineTo(mx, my);
+        this.attackGraphics.lineTo(fx.endX, fx.endY);
+        this.attackGraphics.strokePath();
       }
 
       if (fx.life <= 0) {
@@ -1298,9 +1936,15 @@ export class WeaponSystem {
     this.thornDamage = 0;
     this.thornRadius = 0;
 
-    // Remove electric skin overlay if present
-    if (this.kaiju && this.kaiju.hasLayer('skin_overlay')) {
-      this.kaiju.removeLayer('skin_overlay');
+    // Remove electric skin overlay and all visual mutations
+    if (this.kaiju) {
+      if (typeof this.kaiju.clearAllMutations === 'function') {
+        this.kaiju.clearAllMutations();
+      } else if (this.kaiju.hasLayer && this.kaiju.hasLayer('skin_overlay')) {
+        this.kaiju.removeLayer('skin_overlay');
+      }
+      this.kaiju.reflectChance = 0;
+      this.kaiju.reflectMultiplier = 1.0;
     }
 
     // Re-equip starting weapon

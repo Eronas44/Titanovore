@@ -1389,6 +1389,83 @@ export class TextureGenerator {
 
       shieldCanvas.refresh();
     }
+
+    // 10. EVOLUTION SYNERGY VISUAL LAYERS (Tahap 4B-2)
+    // Placeholder shapes with vivid gold & synergy accent colors
+    // 10a. Badai Plasma (Plasma Storm): Golden-amber horned corona and plasma emitter
+    createLayer('evolution_plasma_storm', (ctx, h) => {
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(h + 16, h - 5, 8, 10);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(h + 18, h - 3, 5, 6);
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(h + 20, h - 1, 3, 2);
+      // Plasma shoulder conduits
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(h - 6, h - 14, 8, 3);
+      ctx.fillRect(h - 6, h + 11, 8, 3);
+    });
+
+    // 10b. Ekor Petir (Lightning Tail): Golden lightning spine crest
+    createLayer('evolution_lightning_tail', (ctx, h) => {
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(h - 16, h - 3, 14, 6);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(h - 14, h - 2, 10, 4);
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(h - 12, h - 1, 6, 2);
+    });
+
+    // 10c. Artileri Berat (Heavy Artillery): Massive dual-bore golden mortar battery
+    createLayer('evolution_heavy_artillery', (ctx, h) => {
+      ctx.fillStyle = '#18181b';
+      ctx.fillRect(h - 15, h - 15, 16, 7);
+      ctx.fillRect(h - 15, h + 8, 16, 7);
+      ctx.fillStyle = '#ea580c';
+      ctx.fillRect(h - 12, h - 14, 14, 5);
+      ctx.fillRect(h - 12, h + 9, 14, 5);
+      // Gold muzzle bands
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(h + 2, h - 15, 3, 7);
+      ctx.fillRect(h + 2, h + 8, 3, 7);
+    });
+
+    // 10d. Gempa Bumi (Cataclysm Quake): Heavy golden tectonic chest core & gauntlets
+    createLayer('evolution_cataclysm_quake', (ctx, h) => {
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(h - 8, h - 7, 14, 14);
+      ctx.fillStyle = '#d97706';
+      ctx.fillRect(h - 6, h - 5, 10, 10);
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(h - 4, h - 3, 6, 6);
+      // Gauntlet edge
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(h + 12, h - 17, 6, 4);
+      ctx.fillRect(h + 12, h + 13, 6, 4);
+    });
+
+    // 10e. Laser Penghancur (Annihilation Laser): Colossal multi-lens beam cannon on head
+    createLayer('evolution_annihilation_laser', (ctx, h) => {
+      ctx.fillStyle = '#450a0a';
+      ctx.fillRect(h + 14, h - 9, 10, 18);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(h + 16, h - 7, 8, 14);
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(h + 13, h - 10, 2, 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(h + 21, h - 2, 4, 4);
+    });
+
+    // 10f. Benteng Berduri (Thorn Bastion): Hexagonal reinforced carapace crest
+    createLayer('evolution_thorn_bastion', (ctx, h) => {
+      ctx.fillStyle = '#064e3b';
+      ctx.fillRect(h - 12, h - 15, 20, 30);
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(h - 10, h - 13, 16, 26);
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(h - 12, h - 16, 20, 2);
+      ctx.fillRect(h - 12, h + 14, 20, 2);
+    });
   }
 }
 

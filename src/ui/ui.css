@@ -940,6 +940,457 @@
   }
 }
 
+/* ==========================================================================
+   Evolution Synergy Styling & Gold Accents (Tahap 4B-2)
+   ========================================================================== */
+
+/* Gold Evolution Card */
+.card-btn.card-evolution {
+  background: radial-gradient(circle at 50% 0%, rgba(255, 215, 0, 0.15) 0%, rgba(10, 15, 25, 0.96) 80%);
+  border: 1.5px solid #ffd700;
+  box-shadow: 0 0 25px rgba(255, 215, 0, 0.28), inset 0 0 15px rgba(255, 215, 0, 0.12);
+  animation: goldPulse 2.4s infinite ease-in-out;
+}
+
+.card-btn.card-evolution:hover {
+  border-color: #fef08a;
+  box-shadow: 0 0 35px rgba(255, 215, 0, 0.45), inset 0 0 22px rgba(255, 215, 0, 0.22);
+  transform: translateY(-4px) scale(1.02);
+}
+
+@keyframes goldPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.25), inset 0 0 12px rgba(255, 215, 0, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 32px rgba(255, 215, 0, 0.42), inset 0 0 20px rgba(255, 215, 0, 0.18);
+  }
+}
+
+.badge-gold-glow {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(217, 119, 6, 0.35)) !important;
+  color: #fef08a !important;
+  border: 1px solid #ffd700 !important;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.card-hotkey-badge.gold {
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  background: rgba(255, 215, 0, 0.1);
+}
+
+.card-icon-frame.gold-glow {
+  border-color: #ffd700 !important;
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
+  background: rgba(20, 16, 5, 0.9) !important;
+}
+
+.gold-title {
+  color: #fef08a !important;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.5);
+  font-size: clamp(16px, 2.3vw, 19px) !important;
+}
+
+.gold-desc {
+  color: #fef9c3 !important;
+  font-size: 12px !important;
+}
+
+/* Card Fusion Recipe Diagram */
+.card-fusion-recipe {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.fusion-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--font-display);
+}
+
+.step-ing {
+  font-size: 10px;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.step-lvl {
+  font-size: 9px;
+  color: #ffd700;
+}
+
+.fusion-symbol {
+  font-size: 11px;
+  font-weight: 800;
+  color: #94a3b8;
+  margin: 0 2px;
+}
+
+.fusion-symbol.arrow {
+  color: #ffd700;
+}
+
+.fusion-step.result .result-text {
+  color: #ffd700;
+  font-weight: 800;
+}
+
+/* Regular Card Synergy Badges & Hints */
+.card-synergy-badge {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid #a855f7;
+  color: #d8b4fe;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.card-synergy-hint {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px dashed rgba(168, 85, 247, 0.35);
+  border-radius: 4px;
+  padding: 3px 6px;
+  margin-top: 4px;
+  width: 100%;
+  text-align: center;
+}
+
+.card-synergy-hint span {
+  color: #ffd700;
+  font-weight: 700;
+}
+
+/* HUD Evolution Weapon Slot */
+.slot-box.evolution-slot {
+  border: 1.5px solid #ffd700 !important;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.45) !important;
+  background: rgba(25, 20, 5, 0.85) !important;
+}
+
+.slot-box.evolution-slot .slot-icon {
+  color: #ffd700;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
+}
+
+.slot-badge.badge-gold {
+  background: #ffd700 !important;
+  color: #05080e !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.6);
+}
+
+/* HUD Recipe Book Toggle Button */
+.hud-recipe-btn {
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid #a855f7;
+  border-radius: 3px;
+  color: #d8b4fe;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.18s ease;
+}
+
+.hud-recipe-btn:hover {
+  background: rgba(168, 85, 247, 0.3);
+  color: #f3e8ff;
+  border-color: #c084fc;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.4);
+}
+
+/* ==========================================================================
+   Recipe Book Modal Overlay
+   ========================================================================== */
+.recipe-book-overlay {
+  z-index: 105;
+}
+
+.recipe-book-wrapper {
+  background: rgba(10, 14, 23, 0.96);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  box-shadow: 0 0 45px rgba(0, 0, 0, 0.8), 0 0 25px rgba(255, 215, 0, 0.15);
+  border-radius: var(--radius-lg);
+  width: min(880px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+  gap: 16px;
+  backdrop-filter: blur(12px);
+}
+
+.recipe-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 12px;
+}
+
+.recipe-title {
+  color: #ffd700 !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+
+.recipe-title svg {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.recipe-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #cbd5e1;
+  font-size: 16px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.recipe-close-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+.recipe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 14px;
+  overflow-y: auto;
+  padding-right: 4px;
+  max-height: 58vh;
+}
+
+.recipe-card {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.recipe-card.recipe-active {
+  border-color: #ffd700;
+  background: rgba(25, 22, 10, 0.8);
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.2);
+}
+
+.recipe-card.recipe-ready {
+  border-color: #10b981;
+  background: rgba(6, 30, 20, 0.8);
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.2);
+}
+
+.recipe-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.recipe-icon-frame {
+  width: 38px;
+  height: 38px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffd700;
+}
+
+.recipe-icon-frame svg {
+  width: 24px;
+  height: 24px;
+}
+
+.recipe-info {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.recipe-name {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.recipe-card.recipe-active .recipe-name {
+  color: #fde047;
+}
+
+.recipe-status-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge-pending {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.badge-ready {
+  background: rgba(16, 185, 129, 0.25);
+  color: #34d399;
+  border: 1px solid #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+}
+
+.badge-active {
+  background: rgba(255, 215, 0, 0.25);
+  color: #fde047;
+  border: 1px solid #ffd700;
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.35);
+}
+
+.recipe-formula-box {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  gap: 6px;
+}
+
+.formula-ingredient {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.formula-ingredient .ingredient-name {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.formula-ingredient .ingredient-req {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.formula-ingredient.met .ingredient-req {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.formula-operator {
+  color: #64748b;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.formula-operator.arrow {
+  color: #ffd700;
+}
+
+.formula-result {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.formula-result .result-name {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+.formula-result .result-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: #fbbf24;
+}
+
+.recipe-desc {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.recipe-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 12px;
+}
+
+.recipe-legend {
+  display: flex;
+  gap: 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+
+.legend-dot.ready { background: #10b981; }
+.legend-dot.active { background: #ffd700; }
+.legend-dot.pending { background: #64748b; }
+
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;
@@ -947,3 +1398,4 @@
     transition-duration: 0.01ms !important;
   }
 }
+

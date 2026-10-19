@@ -1,22 +1,25 @@
 import { Hud } from './Hud.js';
 import { CardScreen } from './CardScreen.js';
 import { DeathScreen } from './DeathScreen.js';
+import { RecipeBook } from './RecipeBook.js';
 
 /**
- * UIManager.js - Tahap 4A-2
+ * UIManager.js - Tahap 4A-2 & 4B-2
  * Master Coordinator for all HTML/CSS UI overlays in Titanovore.
  * Mounted onto <div id="ui-root"> above the Phaser canvas.
  * Manages:
  * - HUD (HP bar, Siaga meter, Timer, Kills, City destruction, Weapons/Passives slots, XP progress, Event banners)
  * - CardScreen (Level-up modal with clickable cards, hotkeys [1, 2, 3, R, S], double-click guards)
  * - DeathScreen (Run summary panel and clickable [R] revive button)
+ * - RecipeBook (Synergy evolution recipes & progression modal [TAB])
  * - Clean lifecycle (no listener leaks on respawns or scene restart)
  */
 export class UIManager {
   /**
    * @param {string} rootId - ID of DOM root element (default: 'ui-root')
+   * @param {Function} getRecipeStatusCallback - Optional callback for live recipe status
    */
-  constructor(rootId = 'ui-root') {
+  constructor(rootId = 'ui-root', getRecipeStatusCallback = null) {
     this.root = document.getElementById(rootId);
     if (!this.root) {
       this.root = document.createElement('div');
@@ -26,11 +29,18 @@ export class UIManager {
 
     // Clear any residual child nodes
     this.root.innerHTML = '';
+    this.getRecipeStatus = getRecipeStatusCallback;
 
     // Initialize sub-modules
     this.hud = new Hud(this.root);
     this.cardScreen = new CardScreen(this.root);
     this.deathScreen = new DeathScreen(this.root);
+    this.recipeBook = new RecipeBook(this.root, () => {
+      return this.getRecipeStatus ? this.getRecipeStatus() : [];
+    });
+
+    // Connect HUD recipe button to RecipeBook
+    this.hud.onToggleRecipe = () => this.toggleRecipeBook();
   }
 
   /**
@@ -106,6 +116,35 @@ export class UIManager {
   }
 
   /**
+   * Toggles Recipe Book modal [TAB]
+   */
+  toggleRecipeBook() {
+    if (this.recipeBook) {
+      this.recipeBook.toggle();
+    }
+  }
+
+  /**
+   * Checks if recipe book modal is open
+   * @returns {boolean}
+   */
+  isRecipeBookOpen() {
+    return this.recipeBook ? this.recipeBook.isOpen : false;
+  }
+
+  /**
+   * Shows large animated evolution banner
+   * @param {string} name 
+   */
+  showEvolutionBanner(name) {
+    if (this.hud && typeof this.hud.showEvolutionBanner === 'function') {
+      this.hud.showEvolutionBanner(name);
+    } else {
+      this.showEventBanner('EVOLUSI SENJATA!', `SINERGI "${name.toUpperCase()}" TELAH AKTIF!`, 2200);
+    }
+  }
+
+  /**
    * Shows animated center pop banner (e.g. "SIAGA 2!", "KAIJU BERVOLUSI!")
    * @param {string} title 
    * @param {string} subtitle 
@@ -144,6 +183,7 @@ export class UIManager {
   reset() {
     if (this.cardScreen) this.cardScreen.close();
     if (this.deathScreen) this.deathScreen.close();
+    if (this.recipeBook) this.recipeBook.close();
   }
 
   /**
@@ -153,6 +193,7 @@ export class UIManager {
     if (this.hud) this.hud.destroy();
     if (this.cardScreen) this.cardScreen.destroy();
     if (this.deathScreen) this.deathScreen.destroy();
+    if (this.recipeBook) this.recipeBook.destroy();
     if (this.root) this.root.innerHTML = '';
   }
 }

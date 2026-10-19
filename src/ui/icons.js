@@ -304,6 +304,78 @@ export const ICONS = {
       <polygon points="5 4 15 12 5 20 5 4" fill="currentColor" />
       <line x1="19" y1="5" x2="19" y2="19" stroke-width="2.5" />
     </svg>
+  `,
+
+  // --- EVOLUTION ICONS (TAHAP 4B-2) ---
+  flask: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 3h6" />
+      <path d="M10 3v5l-4 7.5A2 2 0 0 0 7.7 18.5h8.6a2 2 0 0 0 1.7-3L14 8V3" />
+      <path d="M8.5 14h7" opacity="0.6" />
+      <circle cx="10" cy="16" r="0.8" fill="currentColor" />
+      <circle cx="13.5" cy="15.5" r="0.8" fill="currentColor" />
+    </svg>
+  `,
+
+  evolution: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="none" stroke="#ffd700" />
+      <circle cx="12" cy="12" r="3" fill="#ffd700" opacity="0.4" />
+    </svg>
+  `,
+
+  plasma_storm: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="#f59e0b" />
+      <circle cx="12" cy="12" r="6" stroke="#38bdf8" stroke-width="2.2" />
+      <polygon points="13 7 9 13 13 13 11 17 16 11 12 11 13 7" fill="#facc15" stroke="#ea580c" stroke-width="1" />
+    </svg>
+  `,
+
+  lightning_tail: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 15c4 0 7-3 10-3 3 0 5 2 7 5" stroke="#38bdf8" />
+      <polygon points="13 2 9 8 13 8 11 14 17 7 13 7 13 2" fill="#38bdf8" stroke="#0284c7" />
+      <path d="M17 11l4-2-2 4" stroke="#a855f7" />
+    </svg>
+  `,
+
+  heavy_artillery: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="14" width="7" height="6" rx="1" stroke="#f97316" />
+      <path d="M7 14L15 4l4 3-8 10" stroke="#ef4444" stroke-width="2.2" fill="#78716c" opacity="0.3" />
+      <circle cx="18" cy="4" r="2" fill="#facc15" />
+      <path d="M17 17l4 4M21 17l-4 4" stroke="#eab308" />
+    </svg>
+  `,
+
+  cataclysm_quake: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2l-3 6 4 2-3 6 5 2" stroke="#ea580c" stroke-width="2.5" />
+      <path d="M4 18l4-2 3 3 5-3 4 2" stroke="#eab308" stroke-width="2" />
+      <path d="M7 4L5 9M17 4l2 5" stroke="#10b981" />
+    </svg>
+  `,
+
+  annihilation_laser: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="5" cy="12" r="3" fill="#dc2626" stroke="#ef4444" />
+      <path d="M8 10L22 4" stroke="#ff1e42" stroke-width="2.5" />
+      <path d="M8 12L22 12" stroke="#ffffff" stroke-width="3" />
+      <path d="M8 14L22 20" stroke="#ff1e42" stroke-width="2.5" />
+    </svg>
+  `,
+
+  thorn_bastion: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 20 6 20 14 12 22 4 14 4 6 12 2" stroke="#10b981" stroke-width="2" fill="#064e3b" opacity="0.25" />
+      <polygon points="12 6 17 9 17 13 12 18 7 13 7 9 12 6" fill="#10b981" />
+      <line x1="12" y1="2" x2="12" y2="0" stroke="#ffd700" stroke-width="2" />
+      <line x1="20" y1="6" x2="23" y2="5" stroke="#ffd700" stroke-width="2" />
+      <line x1="20" y1="14" x2="23" y2="15" stroke="#ffd700" stroke-width="2" />
+      <line x1="4" y1="6" x2="1" y2="5" stroke="#ffd700" stroke-width="2" />
+      <line x1="4" y1="14" x2="1" y2="15" stroke="#ffd700" stroke-width="2" />
+    </svg>
   `
 };
 
@@ -317,6 +389,14 @@ export function getIconSvg(key) {
   const normalized = key.toLowerCase().replace(/^(icon_|card_)/, '');
 
   if (ICONS[normalized]) return ICONS[normalized];
+
+  // Evolution mappings
+  if (normalized.includes('plasma') || normalized.includes('badai')) return ICONS.plasma_storm;
+  if (normalized.includes('lightning_tail') || (normalized.includes('petir') && normalized.includes('ekor'))) return ICONS.lightning_tail;
+  if (normalized.includes('artillery') || normalized.includes('artileri')) return ICONS.heavy_artillery;
+  if (normalized.includes('quake') && normalized.includes('cataclysm')) return ICONS.cataclysm_quake;
+  if (normalized.includes('annihilation') || normalized.includes('hancur')) return ICONS.annihilation_laser;
+  if (normalized.includes('bastion') || normalized.includes('benteng')) return ICONS.thorn_bastion;
 
   // Weapon mappings
   if (normalized.includes('spiked_tail') || normalized.includes('ekor')) return ICONS.spiked_tail;

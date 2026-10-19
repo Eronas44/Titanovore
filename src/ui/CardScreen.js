@@ -135,10 +135,67 @@ export class CardScreen {
 
     cards.forEach((item, index) => {
       const card = item.card;
+      const btn = document.createElement('button');
+
+      // 1. Dedicated Gold Evolution Card (Tahap 4B-2)
+      if (item.isEvolution || card.isEvolution) {
+        btn.className = 'card-btn card-evolution interactive';
+        btn.setAttribute('type', 'button');
+        btn.setAttribute('data-card-index', index);
+
+        const p1 = card.primaryIngredient || { name: 'Bahan 1', minLevel: 5 };
+        const p2 = card.secondaryIngredient || { name: 'Bahan 2', minLevel: 3 };
+
+        btn.innerHTML = `
+          <div class="card-top-row">
+            <div style="display: flex; gap: 5px; align-items: center;">
+              <span class="card-rarity-badge badge-gold-glow">⚗ EVOLUSI</span>
+            </div>
+            <span class="card-hotkey-badge gold">[ ${index + 1} ]</span>
+          </div>
+
+          <div class="card-icon-frame gold-glow">
+            <div style="color: #ffd700; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
+              ${getIconSvg(card.icon || card.id)}
+            </div>
+          </div>
+
+          <div class="card-name gold-title">${card.name}</div>
+          <div class="card-level-tag" style="color: #ffd700; font-weight: 700; letter-spacing: 1px;">SENJATA SINERGI</div>
+
+          <div class="card-fusion-recipe">
+            <div class="fusion-step">
+              <span class="step-ing">${p1.name}</span>
+              <span class="step-lvl">Lv ${p1.minLevel}</span>
+            </div>
+            <span class="fusion-symbol">+</span>
+            <div class="fusion-step">
+              <span class="step-ing">${p2.name}</span>
+              <span class="step-lvl">Lv ${p2.minLevel}</span>
+            </div>
+            <span class="fusion-symbol arrow">➔</span>
+            <div class="fusion-step result">
+              <span class="step-ing result-text">${card.name}</span>
+            </div>
+          </div>
+
+          <div class="card-desc gold-desc">${card.descriptions?.[0] || ''}</div>
+        `;
+
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.triggerSelect(index);
+        });
+
+        this.gridEl.appendChild(btn);
+        return;
+      }
+
+      // 2. Regular Upgrade Card
       const rarity = item.rarityData || { name: 'Umum', color: '#94a3b8' };
       const rarityKey = (card.rarity || 'common').toLowerCase();
 
-      const btn = document.createElement('button');
       btn.className = `card-btn rarity-${rarityKey} interactive`;
       btn.setAttribute('type', 'button');
       btn.setAttribute('data-card-index', index);
@@ -163,11 +220,22 @@ export class CardScreen {
         ? `<span class="card-mutation-badge">${ICONS.dna} MUTASI</span>`
         : '';
 
+      const synergyBadgeHtml = (card.synergyHints && card.synergyHints.length > 0)
+        ? `<span class="card-synergy-badge" title="Bisa dievolusikan">${ICONS.flask} ⚗ EVOLUSI</span>`
+        : '';
+
+      let synergyHintHtml = '';
+      if (card.synergyHints && card.synergyHints.length > 0) {
+        const hint = card.synergyHints[0];
+        synergyHintHtml = `<div class="card-synergy-hint">⚗ Sinergi: + ${hint.partnerName} ➔ <span>${hint.evolutionName}</span></div>`;
+      }
+
       btn.innerHTML = `
         <div class="card-top-row">
-          <div style="display: flex; gap: 5px; align-items: center;">
+          <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
             <span class="card-rarity-badge" style="color: ${rarity.color}; border-color: ${rarity.color};">${rarity.name}</span>
             ${mutationBadgeHtml}
+            ${synergyBadgeHtml}
           </div>
           <span class="card-hotkey-badge">[ ${index + 1} ]</span>
         </div>
@@ -183,6 +251,7 @@ export class CardScreen {
         ${pipsHtml}
 
         <div class="card-desc">${desc}</div>
+        ${synergyHintHtml}
       `;
 
       // Real DOM button click event
