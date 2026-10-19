@@ -2,8 +2,9 @@ import { GAME_CONFIG } from '../config/game.js';
 import { PRNG } from '../utils/prng.js';
 
 /**
- * High-Performance Particle Manager - Tahap 2B
- * Pre-allocated object pools for debris shards, dust clouds, and squish splatters.
+ * High-Performance Particle Manager - Tahap 2B & 5A
+ * Pre-allocated zero-GC object pools for debris shards, dust clouds, and squish splatters.
+ * Optimized with O(1) free index stacks to eliminate Array.find scans under heavy combat.
  * Rendered using dedicated pooled graphics batches to guarantee 0 GC pauses and 60 FPS.
  */
 export class ParticleManager {
@@ -17,8 +18,9 @@ export class ParticleManager {
     const { maxDebrisParticles, maxDustParticles, maxBloodSparks } = GAME_CONFIG.destruction;
 
     // 1. Debris Particle Pool (Max 600)
-    this.maxDebris = maxDebrisParticles;
+    this.maxDebris = maxDebrisParticles || 600;
     this.debrisPool = [];
+    this.freeDebrisIndices = [];
     for (let i = 0; i < this.maxDebris; i++) {
       this.debrisPool.push({
         active: false,
@@ -32,11 +34,13 @@ export class ParticleManager {
         life: 0,
         maxLife: 1.0
       });
+      this.freeDebrisIndices.push(i);
     }
 
     // 2. Dust Cloud Pool (Max 150)
-    this.maxDust = maxDustParticles;
+    this.maxDust = maxDustParticles || 150;
     this.dustPool = [];
+    this.freeDustIndices = [];
     for (let i = 0; i < this.maxDust; i++) {
       this.dustPool.push({
         active: false,
@@ -51,11 +55,13 @@ export class ParticleManager {
         life: 0,
         maxLife: 1.0
       });
+      this.freeDustIndices.push(i);
     }
 
     // 3. Sparks & Blood Splatters Pool (Max 50)
-    this.maxSparks = maxBloodSparks;
+    this.maxSparks = maxBloodSparks || 50;
     this.sparkPool = [];
+    this.freeSparkIndices = [];
     for (let i = 0; i < this.maxSparks; i++) {
       this.sparkPool.push({
         active: false,
@@ -69,6 +75,7 @@ export class ParticleManager {
         life: 0,
         maxLife: 0.5
       });
+      this.freeSparkIndices.push(i);
     }
 
     // Dedicated Graphics GameObjects for zero-overhead batch drawing
@@ -89,8 +96,9 @@ export class ParticleManager {
     const numColor = typeof color === 'string' ? parseInt(color.replace('#', '0x'), 16) : color;
 
     for (let i = 0; i < count; i++) {
-      const p = this.debrisPool.find(item => !item.active);
-      if (!p) break;
+      if (this.freeDebrisIndices.length === 0) break;
+      const idx = this.freeDebrisIndices.pop();
+      const p = this.debrisPool[idx];
 
       const angle = this.prng.range(0, Math.PI * 2);
       const spd = this.prng.range(20, speedMax);
@@ -101,26 +109,27 @@ export class ParticleManager {
       p.vx = Math.cos(angle) * spd;
       p.vy = Math.sin(angle) * spd;
       p.color = numColor;
-      p.size = this.prng.chance(0.4) ? 3 : 2;
+      p.size = this.prng.rangeInt(1, 3);
       p.alpha = 1.0;
-      p.maxLife = this.prng.range(0.35, 0.7);
+      p.maxLife = this.prng.range(0.3, 0.7);
       p.life = p.maxLife;
     }
   }
 
   /**
-   * Spawns billowing pixel dust clouds (grayish-brown) expanding and dissipating
+   * Spawns expanding, drifting dust clouds at (x, y)
    * @param {number} x 
    * @param {number} y 
    * @param {number} count 
-   * @param {number} scaleFactor - Scales with building height
+   * @param {number} scaleFactor 
    */
-  emitDust(x, y, count = 3, scaleFactor = 1.0) {
-    const dustColors = [0x3d3945, 0x4f4959, 0x5e5669, 0x332f3b];
+  emitDust(x, y, count = 2, scaleFactor = 1.0) {
+    const dustColors = [0x3c3845, 0x47424d, 0x585260, 0x2e2a35];
 
     for (let i = 0; i < count; i++) {
-      const d = this.dustPool.find(item => !item.active);
-      if (!d) break;
+      if (this.freeDustIndices.length === 0) break;
+      const idx = this.freeDustIndices.pop();
+      const d = this.dustPool[idx];
 
       const angle = this.prng.range(0, Math.PI * 2);
       const spd = this.prng.range(6, 25) * scaleFactor;
@@ -144,8 +153,9 @@ export class ParticleManager {
    */
   emitBloodSplatter(x, y) {
     for (let i = 0; i < 4; i++) {
-      const s = this.sparkPool.find(item => !item.active);
-      if (!s) break;
+      if (this.freeSparkIndices.length === 0) break;
+      const idx = this.freeSparkIndices.pop();
+      const s = this.sparkPool[idx];
 
       const angle = this.prng.range(0, Math.PI * 2);
       const spd = this.prng.range(15, 45);
@@ -167,33 +177,37 @@ export class ParticleManager {
    * Spawns brief orange additive fire spark / flash on major collapses
    */
   emitCollapseFlash(x, y, radius = 20) {
-    const s = this.sparkPool.find(item => !item.active);
-    if (s) {
-      s.active = true;
-      s.x = x;
-      s.y = y;
-      s.vx = 0;
-      s.vy = 0;
-      s.color = 0xf97316; // Vivid orange
-      s.size = radius;
-      s.alpha = 0.75;
-      s.maxLife = 0.12; // Very brief flash
-      s.life = s.maxLife;
-    }
+    if (this.freeSparkIndices.length === 0) return;
+    const idx = this.freeSparkIndices.pop();
+    const s = this.sparkPool[idx];
+
+    s.active = true;
+    s.x = x;
+    s.y = y;
+    s.vx = 0;
+    s.vy = 0;
+    s.color = 0xffa500;
+    s.size = radius;
+    s.alpha = 0.85;
+    s.maxLife = 0.15;
+    s.life = s.maxLife;
   }
 
   /**
-   * Closing puff effect when the very last cell of a building is destroyed
+   * Special dramatic effects when a building completely collapses
    * @param {number} x 
    * @param {number} y 
-   * @param {number|string} color 
+   * @param {string} baseColor 
    * @param {number} heightLevel 
    */
-  emitFinalBuildingCollapse(x, y, color, heightLevel = 3) {
-    const scale = Math.min(2.0, 1.0 + heightLevel * 0.1);
-    this.emitDust(x, y, 6, scale);
-    this.emitDebris(x, y, color, 8, 55);
-    this.emitCollapseFlash(x, y, 14);
+  emitFinalBuildingCollapse(x, y, baseColor, heightLevel = 2) {
+    const scale = Math.max(1.0, heightLevel / 3);
+    const debrisCount = Math.round(18 * scale);
+    const dustCount = Math.round(8 * scale);
+
+    this.emitDebris(x, y, baseColor, debrisCount, 90 * scale);
+    this.emitDust(x, y, dustCount, 1.8 * scale);
+    this.emitCollapseFlash(x, y, 28 * scale);
   }
 
   /**
@@ -236,6 +250,7 @@ export class ParticleManager {
       d.life -= dt;
       if (d.life <= 0) {
         d.active = false;
+        this.freeDustIndices.push(i);
         continue;
       }
 
@@ -260,6 +275,7 @@ export class ParticleManager {
       p.life -= dt;
       if (p.life <= 0) {
         p.active = false;
+        this.freeDebrisIndices.push(i);
         continue;
       }
 
@@ -283,6 +299,7 @@ export class ParticleManager {
       s.life -= dt;
       if (s.life <= 0) {
         s.active = false;
+        this.freeSparkIndices.push(i);
         continue;
       }
 
@@ -306,9 +323,24 @@ export class ParticleManager {
    * Resets all particle pools cleanly
    */
   reset() {
-    this.debrisPool.forEach(p => { p.active = false; });
-    this.dustPool.forEach(d => { d.active = false; });
-    this.sparkPool.forEach(s => { s.active = false; });
+    this.freeDebrisIndices = [];
+    for (let i = 0; i < this.maxDebris; i++) {
+      this.debrisPool[i].active = false;
+      this.freeDebrisIndices.push(i);
+    }
+
+    this.freeDustIndices = [];
+    for (let i = 0; i < this.maxDust; i++) {
+      this.dustPool[i].active = false;
+      this.freeDustIndices.push(i);
+    }
+
+    this.freeSparkIndices = [];
+    for (let i = 0; i < this.maxSparks; i++) {
+      this.sparkPool[i].active = false;
+      this.freeSparkIndices.push(i);
+    }
+
     this.dustGraphics.clear();
     this.debrisGraphics.clear();
     this.sparkGraphics.clear();

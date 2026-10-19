@@ -249,18 +249,26 @@ export class ChunkRenderer {
       }
     }
 
-    // 3. Process batch of dirty chunks modified by destruction (budgeted to avoid frame drops)
+    // 3. Process batch of dirty chunks modified by destruction (prioritizing visible screen chunks)
     if (this.dirtyChunks.size > 0) {
-      const maxUpdates = WORLD_CONFIG.maxDirtyChunkUpdatesPerFrame || 4;
+      const maxUpdates = 2; // Strict 2-per-frame cap prevents WebGL texture upload GPU stalls
       let updated = 0;
       for (const chunk of this.dirtyChunks) {
-        if (chunk.canvasTexture) {
-          chunk.canvasTexture.refresh();
+        const isVisible =
+          chunk.cx >= minCx - 1 &&
+          chunk.cx <= maxCx + 1 &&
+          chunk.cy >= minCy - 1 &&
+          chunk.cy <= maxCy + 1;
+
+        if (isVisible) {
+          if (chunk.canvasTexture) {
+            chunk.canvasTexture.refresh();
+          }
+          chunk.isDirty = false;
+          this.dirtyChunks.delete(chunk);
+          updated++;
+          if (updated >= maxUpdates) break;
         }
-        chunk.isDirty = false;
-        this.dirtyChunks.delete(chunk);
-        updated++;
-        if (updated >= maxUpdates) break;
       }
     }
   }
@@ -1114,6 +1122,71 @@ export class ChunkRenderer {
       ctx.fillRect(lx - 1, ly + 2, 2, 1);
       ctx.fillRect(lx + 3, ly + 1, 2, 1);
     }
+
+    chunk.isDirty = true;
+    this.dirtyChunks.add(chunk);
+  }
+
+  /**
+   * Modifies chunk canvas at world (x, y) to render yellow/amber construction scaffolding
+   * and structural steel frame for a cell undergoing reconstruction.
+   * @param {number} worldX 
+   * @param {number} worldY 
+   */
+  markCellAsScaffolding(worldX, worldY) {
+    const cx = Math.floor(worldX / this.chunkSize);
+    const cy = Math.floor(worldY / this.chunkSize);
+    const key = `${cx}_${cy}`;
+    const chunk = this.chunks.get(key);
+    if (!chunk || chunk.status !== 'ready' || !chunk.ctx) return;
+
+    const lx = Math.floor(worldX - chunk.x);
+    const ly = Math.floor(worldY - chunk.y);
+
+    const ctx = chunk.ctx;
+    // 1. Concrete foundation base
+    ctx.fillStyle = '#2d2836';
+    ctx.fillRect(lx, ly, 4, 4);
+
+    // 2. Amber steel lattice / scaffolding grid
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(lx, ly, 4, 1);
+    ctx.fillRect(lx, ly + 3, 4, 1);
+    ctx.fillRect(lx + 1, ly + 1, 2, 2);
+
+    // 3. Highlight joint rivet
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(lx + 1, ly + 1, 1, 1);
+
+    chunk.isDirty = true;
+    this.dirtyChunks.add(chunk);
+  }
+
+  /**
+   * Modifies chunk canvas at world (x, y) to render a fully restored building roof cell.
+   * @param {number} worldX 
+   * @param {number} worldY 
+   * @param {string} baseColor 
+   */
+  markCellAsRestored(worldX, worldY, baseColor = '#4a4453') {
+    const cx = Math.floor(worldX / this.chunkSize);
+    const cy = Math.floor(worldY / this.chunkSize);
+    const key = `${cx}_${cy}`;
+    const chunk = this.chunks.get(key);
+    if (!chunk || chunk.status !== 'ready' || !chunk.ctx) return;
+
+    const lx = Math.floor(worldX - chunk.x);
+    const ly = Math.floor(worldY - chunk.y);
+
+    const ctx = chunk.ctx;
+    // 1. Solid roof base
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(lx, ly, 4, 4);
+
+    // 2. Subtle architectural border
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(lx, ly + 3, 4, 1);
+    ctx.fillRect(lx + 3, ly, 1, 4);
 
     chunk.isDirty = true;
     this.dirtyChunks.add(chunk);

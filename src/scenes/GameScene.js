@@ -18,9 +18,12 @@ import { XP_CONFIG } from '../config/xp.js';
 import { WeaponSystem } from '../weapons/WeaponSystem.js';
 import { WEAPON_CONFIG } from '../config/weapons.js';
 import { CardSystem } from '../cards/CardSystem.js';
-import { CARD_CONFIG } from '../config/cards.js';
 import { EVOLUTION_CONFIG } from '../config/evolutions.js';
 import { UIManager } from '../ui/UIManager.js';
+import { Districts } from '../world/Districts.js';
+import { DISTRICTS_CONFIG } from '../config/districts.js';
+import { RebuildSystem } from '../world/RebuildSystem.js';
+import { SaveSystem } from '../systems/SaveSystem.js';
 
 /**
  * GameScene - Tahap 3B
@@ -69,6 +72,12 @@ export class GameScene extends Phaser.Scene {
     this.cityGenerator = new CityGenerator(WORLD_CONFIG.seed);
     this.cityData = this.cityGenerator.generate(this.cityGrid);
 
+    // 5a. Initialize Persistent Districts (Tahap 5A)
+    this.districts = new Districts(this.cityData, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight);
+    for (const bldg of this.cityGrid.buildings.values()) {
+      this.districts.registerBuilding(bldg);
+    }
+
     // 5b. Initialize 8x8 px Navigation Grid & Flow Field (Tahap 3A-2)
     this.navGrid = new NavGrid(this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, ENEMY_CONFIG.navCellSize);
 
@@ -77,6 +86,28 @@ export class GameScene extends Phaser.Scene {
 
     // 6. Chunk Renderer (256x256 px chunks, dirty rect batch rendering, camera culling)
     this.chunkRenderer = new ChunkRenderer(this, this.cityData);
+
+    // 6b. Initialize City Rebuild System (Tahap 5A)
+    this.rebuildSystem = new RebuildSystem(this);
+
+    // 6c. Initialize IndexedDB Save System (Tahap 5A)
+    this.saveSystem = new SaveSystem(this);
+    this.saveSystem.loadWorldState().then(async (savedState) => {
+      if (savedState) {
+        if (this.uiManager) {
+          this.uiManager.showLoadingScreen('MEMUAT KOTA PERSISTEN', 0);
+        }
+        await this.saveSystem.applyWorldState(savedState, (prog) => {
+          if (this.uiManager) {
+            this.uiManager.updateLoadingProgress(prog);
+          }
+        });
+        if (this.uiManager) {
+          this.uiManager.hideLoadingScreen();
+          this.uiManager.showEventBanner('KOTA DIMUAT', 'DATA PERSISTENSI KOTA BERHASIL DITERAPKAN', 2000);
+        }
+      }
+    });
 
     // 7. Spawn Kaiju in the center of the world (Downtown)
     const spawnX = WORLD_CONFIG.worldWidth / 2;
@@ -121,11 +152,12 @@ export class GameScene extends Phaser.Scene {
       return this.cardSystem && this.cardSystem.evolutionSystem
         ? this.cardSystem.evolutionSystem.getAllRecipesStatus()
         : [];
-    });
+    }, this);
     this.isExtendedHud = false;
     this.evolutionDebugIndex = 0;
+    this.profiling = { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0 };
 
-    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga, M: Evolution Cheat)
+    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga, M: Evolution Cheat, T: Rebuild, Y: Save, N: Minimap)
     this.setupDebugKeys();
   }
 
@@ -172,7 +204,7 @@ export class GameScene extends Phaser.Scene {
     // 2. [R] Key: Bangkit Kembali (RunState reset: Siaga & enemies reset, city damage persists)
     this.input.keyboard.on('keydown-R', (event) => {
       if (event.shiftKey) {
-        this.restartCity(); // Hard full world reset
+        this.startNewCity(); // Hard full world reset + deletes save
       } else {
         this.respawnKaiju(); // RunState respawn: city remains destroyed
       }
@@ -284,6 +316,74 @@ export class GameScene extends Phaser.Scene {
         this.uiManager.showEventBanner('DEBUG CHEAT [M]', `BAHAN "${evo.name.toUpperCase()}" DISIAPKAN!`, 1800);
       }
     });
+
+    // 12. [T] Key: (Temporary Debug) Fast Rebuild Toggle (10s delay vs 360s)
+    this.input.keyboard.on('keydown-T', (event) => {
+      event.preventDefault();
+      if (this.rebuildSystem) {
+        const isFast = this.rebuildSystem.toggleFastDebugMode();
+        if (this.uiManager) {
+          const status = isFast ? 'CEPAT (10 DETIK)' : 'NORMAL (6 MENIT)';
+          this.uiManager.showEventBanner('PEMBANGUNAN KOTA [T]', `JEDA RECOVERY: ${status}`, 2200);
+        }
+      }
+    });
+
+    // 13. [Y] Key: (Temporary Debug) Save WorldState now and reload scene (test save/load without browser refresh)
+    this.input.keyboard.on('keydown-Y', async (event) => {
+      event.preventDefault();
+      if (this.saveSystem) {
+        if (this.uiManager) {
+          this.uiManager.showEventBanner('SIMPAN & MUAT [Y]', 'MENYIMPAN KE INDEXEDDB DAN MEMUAT ULANG...', 1500);
+        }
+        await this.saveSystem.saveNow();
+        this.time.delayedCall(250, () => {
+          this.scene.restart();
+        });
+      }
+    });
+
+    // 14. [N] Key: Toggle Tactical Radar Minimap
+    this.input.keyboard.on('keydown-N', (event) => {
+      event.preventDefault();
+      if (this.uiManager) {
+        this.uiManager.toggleMinimap();
+      }
+    });
+
+    // 15. [K] Key: (Temporary Debug) Trigger 80% District Milestone Test
+    this.input.keyboard.on('keydown-K', (event) => {
+      event.preventDefault();
+      if (this.districts) {
+        const curD = this.districts.getCurrentDistrict();
+        if (curD) {
+          curD.destroyedBuildingCells = Math.ceil(curD.totalInitialBuildingCells * 0.81);
+          curD.is80PercentDestroyed = true;
+          if (this.uiManager) {
+            this.uiManager.showEventBanner('DISTRIK RATA!', `${curD.name.toUpperCase()} HANCUR 80%! HADIAH KARTU BONUS DIBERIKAN!`, 3000);
+          }
+          if (this.alertSystem) {
+            this.alertSystem.addAlert(DISTRICTS_CONFIG.milestones.collapseRewardAlertGain || 15);
+          }
+          if (this.cardSystem) {
+            this.cardSystem.queueBonusCardScreen(`DISTRIK ${curD.name.toUpperCase()} RATA`);
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Resets WorldState in IndexedDB and starts a completely fresh city
+   */
+  async startNewCity() {
+    if (this.saveSystem) {
+      await this.saveSystem.clearSave();
+    }
+    this.restartCity();
+    if (this.uiManager) {
+      this.uiManager.showEventBanner('KOTA BARU', 'KOTA TELAH DIRESET DAN SIAP DIHANCURKAN!', 2200);
+    }
   }
 
   /**
@@ -339,6 +439,9 @@ export class GameScene extends Phaser.Scene {
     if (this.cardSystem) {
       this.cardSystem.reset();
     }
+    if (this.districts) {
+      this.districts.resetRunState(); // Reset per-run milestone claim flags
+    }
     this.isCardSelecting = false;
 
     // 4. Reset Run Telemetry (City destruction stats remain accumulated)
@@ -368,6 +471,16 @@ export class GameScene extends Phaser.Scene {
     this.cityData = this.cityGenerator.generate(this.cityGrid);
     this.navGrid = new NavGrid(this.cityGrid, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight, ENEMY_CONFIG.navCellSize);
     this.chunkRenderer = new ChunkRenderer(this, this.cityData);
+
+    if (this.districts) {
+      this.districts = new Districts(this.cityData, WORLD_CONFIG.worldWidth, WORLD_CONFIG.worldHeight);
+      for (const bldg of this.cityGrid.buildings.values()) {
+        this.districts.registerBuilding(bldg);
+      }
+    }
+    if (this.rebuildSystem) {
+      this.rebuildSystem.reset();
+    }
 
     if (this.alertSystem) {
       this.alertSystem.reset();
@@ -471,18 +584,31 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // F3 Extended Telemetry
+    // F3 Extended Telemetry (Detailed ms breakdown per frame)
     let f3Text = '';
     if (this.isExtendedHud) {
       const fps = Math.round(this.game.loop.actualFps);
       const tc = this.enemyManager ? this.enemyManager.typeCounts : [0,0,0,0,0,0,0,0];
       const activeTot = this.enemyManager ? this.enemyManager.activeCount : 0;
-      const updateMs = this.enemyManager ? this.enemyManager.lastUpdateTimeMs.toFixed(2) : '0.00';
-      f3Text = `FPS: ${fps} | ENEMY UPDATE: ${updateMs}ms | ACTIVE: ${activeTot}\n` +
-               `ENTITIES: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]}\n` +
-               `KAIJU SCALE: ${this.kaiju.currentScale.toFixed(2)}x | ZONE: ${this.currentZoneName}\n` +
-               `[F6] AirKill | [F7/F8] Siaga +/- | [X] LvUp | [C] +500XP`;
+      const p = this.profiling || { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0 };
+
+      const curD = this.districts ? this.districts.getCurrentDistrict() : null;
+      const dName = curD ? curD.name : 'Downtown';
+      const dPct = curD ? this.districts.getDestructionPercentage(curD.id).toFixed(1) : '0.0';
+      const fastRebuildStr = (this.rebuildSystem && this.rebuildSystem.isFastDebugMode) ? 'CEPAT (10s)' : 'NORMAL (6m)';
+
+      f3Text = `FPS: ${fps} | TOTAL KOTA: ${destructionPct}% | DISTRIK: ${dName.toUpperCase()} (${dPct}%)\n` +
+               `PROFILE (ms): Enemy: ${p.tEnemy.toFixed(2)} | Wpn: ${p.tWeapon.toFixed(2)} | Part: ${p.tParticle.toFixed(2)} | Chunk: ${p.tChunk.toFixed(2)} | Nav: ${p.tNav.toFixed(2)} | UI: ${p.tUI.toFixed(2)}\n` +
+               `ENTITIES: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} (TOT: ${activeTot})\n` +
+               `REBUILD: ${fastRebuildStr} | SAVE: ${this.saveSystem ? this.saveSystem.getLastSavedString() : 'N/A'}\n` +
+               `HOTKEYS: [T] Rebuild Speed | [Y] Save & Reload | [N] Radar Minimap | [Shift+R] Kota Baru`;
     }
+
+    const curDistrict = this.districts ? this.districts.getCurrentDistrict() : null;
+    const districtName = curDistrict ? curDistrict.name : 'Pusat Kota';
+    const districtColor = curDistrict ? curDistrict.color : '#38bdf8';
+    const districtDestructionPct = curDistrict ? this.districts.getDestructionPercentage(curDistrict.id).toFixed(1) : '0.0';
+    const lastSavedStr = this.saveSystem ? `Disimpan: ${this.saveSystem.getLastSavedString()}` : 'Tersimpan';
 
     this.uiManager.update({
       hp: curHp,
@@ -494,6 +620,10 @@ export class GameScene extends Phaser.Scene {
       totalKills,
       destructionPct,
       bldgsCount,
+      districtName,
+      districtColor,
+      districtDestructionPct,
+      lastSavedStr,
       level,
       xp,
       targetXp,
@@ -516,6 +646,11 @@ export class GameScene extends Phaser.Scene {
       this.cardSystem.closeModal();
     }
     this.isCardSelecting = false;
+
+    // Save WorldState immediately on death
+    if (this.saveSystem) {
+      this.saveSystem.saveNow();
+    }
 
     // 1. Slow-motion cinematic effect
     this.time.timeScale = 0.25;
@@ -608,23 +743,29 @@ export class GameScene extends Phaser.Scene {
 
     // 4b. Update Navigation Grid & Flow Fields (Tahap 3A-2)
     // Flushes newly cleared rubble paths and recalculates BFS gradient vectors towards Kaiju
+    const tNav0 = performance.now();
     if (this.navGrid) {
       this.navGrid.flushDirtyUpdates();
       this.navGrid.updateFlowField(this.kaiju.x, this.kaiju.y, dt);
     }
+    const tNav = performance.now() - tNav0;
 
     // 5. Update Enemies & Threat Manager (Tahap 3B)
+    const tEnemy0 = performance.now();
     if (this.enemyManager) {
       this.enemyManager.update(this.cameras.main, dt, this.kaiju, this.particleManager);
     }
+    const tEnemy = performance.now() - tEnemy0;
 
     // 6. Update Ambient Crowd
     this.crowd.update(this.cameras.main, delta, this.kaiju);
 
     // 6b. Update Automatic Weapons (Tahap 4A)
+    const tWeapon0 = performance.now();
     if (this.weaponSystem) {
       this.weaponSystem.update(dt);
     }
+    const tWeapon = performance.now() - tWeapon0;
 
     // 6c. Update XP System & Crystal Magnet (Tahap 4A)
     if (this.xpSystem) {
@@ -636,14 +777,45 @@ export class GameScene extends Phaser.Scene {
       this.cardSystem.update(dt);
     }
 
+    // 6e. Update Districts & Rebuilding (Tahap 5A)
+    if (this.districts) {
+      const dChange = this.districts.checkKaijuPosition(this.kaiju.x, this.kaiju.y);
+      if (dChange && dChange.changed && this.uiManager) {
+        this.uiManager.showEventBanner('MEMASUKI WILAYAH', `${dChange.currentDistrict.name.toUpperCase()} · ${dChange.currentDistrict.subtitle.toUpperCase()}`, 2000);
+      }
+    }
+
+    if (this.rebuildSystem) {
+      this.rebuildSystem.update(dt, this.kaiju, this.enemyManager);
+    }
+
+    // 6f. Update SaveSystem debounced auto-save (Tahap 5A)
+    if (this.saveSystem) {
+      this.saveSystem.update(dt);
+    }
+
     // 7. Update Particle Manager
+    const tParticle0 = performance.now();
     this.particleManager.update(dt);
+    const tParticle = performance.now() - tParticle0;
 
     // 8. Update Chunk Renderer (progressive loading & dirty rect batches)
+    const tChunk0 = performance.now();
     this.chunkRenderer.update(this.cameras.main);
+    const tChunk = performance.now() - tChunk0;
 
     // 9. Update HUD Telemetry, Inventory, and XP Bar
+    const alpha = 0.2;
+    this.profiling.tEnemy = this.profiling.tEnemy * (1 - alpha) + tEnemy * alpha;
+    this.profiling.tWeapon = this.profiling.tWeapon * (1 - alpha) + tWeapon * alpha;
+    this.profiling.tParticle = this.profiling.tParticle * (1 - alpha) + tParticle * alpha;
+    this.profiling.tChunk = this.profiling.tChunk * (1 - alpha) + tChunk * alpha;
+    this.profiling.tNav = this.profiling.tNav * (1 - alpha) + tNav * alpha;
+
+    const tUI0 = performance.now();
     this.updateHUD();
+    const tUI = performance.now() - tUI0;
+    this.profiling.tUI = this.profiling.tUI * (1 - alpha) + tUI * alpha;
   }
 
   /**
@@ -800,6 +972,32 @@ export class GameScene extends Phaser.Scene {
       this.navGrid.markDirtyCell(cell.worldX, cell.worldY);
     }
 
+    // Phase 5A: Districts Destruction Milestone & Bonus
+    if (this.districts) {
+      const dRes = this.districts.onCellDestroyed(cell.worldX, cell.worldY, building);
+      if (dRes && dRes.isMilestoneTriggered) {
+        if (this.uiManager) {
+          this.uiManager.showEventBanner('DISTRIK RATA!', `${dRes.district.name.toUpperCase()} HANCUR 80%! HADIAH KARTU BONUS DIBERIKAN!`, 3000);
+        }
+        if (this.alertSystem) {
+          this.alertSystem.addAlert(DISTRICTS_CONFIG.milestones.collapseRewardAlertGain || 15);
+        }
+        if (this.cardSystem) {
+          this.cardSystem.queueBonusCardScreen(`DISTRIK ${dRes.district.name.toUpperCase()} RATA`);
+        }
+      }
+    }
+
+    // Phase 5A: Queue cell in RebuildSystem
+    if (this.rebuildSystem) {
+      this.rebuildSystem.recordDestroyedCell(cell.worldX, cell.worldY, cell, building);
+    }
+
+    // Phase 5A: Mark SaveSystem dirty
+    if (this.saveSystem) {
+      this.saveSystem.markDirty();
+    }
+
     // 2. Debris & dust emission (scaled for skyscrapers)
     const dustMult = isSkyscraper ? (collapseConfig.skyscraperDustMultiplier || 1.8) : 1.0;
     const debrisCount = Math.round((isBodyTrample ? 2 : 2) * dustMult);
@@ -874,6 +1072,28 @@ export class GameScene extends Phaser.Scene {
               }
               if (this.alertSystem) {
                 this.alertSystem.addAlert(ALERT_CONFIG.gains.cellDestroyed);
+              }
+
+              // Phase 5A: Districts & Rebuild notification for isolated fragments
+              if (this.districts) {
+                const dRes = this.districts.onCellDestroyed(ic.worldX, ic.worldY, building);
+                if (dRes && dRes.isMilestoneTriggered) {
+                  if (this.uiManager) {
+                    this.uiManager.showEventBanner('DISTRIK RATA!', `${dRes.district.name.toUpperCase()} HANCUR 80%! HADIAH KARTU BONUS DIBERIKAN!`, 3000);
+                  }
+                  if (this.alertSystem) {
+                    this.alertSystem.addAlert(DISTRICTS_CONFIG.milestones.collapseRewardAlertGain || 15);
+                  }
+                  if (this.cardSystem) {
+                    this.cardSystem.queueBonusCardScreen(`DISTRIK ${dRes.district.name.toUpperCase()} RATA`);
+                  }
+                }
+              }
+              if (this.rebuildSystem) {
+                this.rebuildSystem.recordDestroyedCell(ic.worldX, ic.worldY, ic, building);
+              }
+              if (this.saveSystem) {
+                this.saveSystem.markDirty();
               }
             }
           }

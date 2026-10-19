@@ -36,6 +36,9 @@ export class Hud {
       totalKills: -1,
       destructionPct: '',
       bldgsCount: -1,
+      districtName: '',
+      districtDestructionPct: '',
+      lastSavedStr: '',
       level: -1,
       xp: -1,
       targetXp: -1,
@@ -121,13 +124,23 @@ export class Hud {
           </div>
         </div>
 
-        <!-- Top Right: City Destruction -->
+        <!-- Top Right: Districts, City Destruction & WorldState Menu -->
         <div class="hud-top-right hud-panel">
-          <div class="stat-item">
-            <div class="stat-icon" style="color: var(--color-amber);">${ICONS.city}</div>
-            <span class="destruction-pct" id="hud-destruction">0.0%</span>
+          <div class="hud-district-header">
+            <span class="hud-district-badge" id="hud-district-badge">PUSAT KOTA</span>
+            <span class="hud-district-pct" id="hud-district-pct">0.0% Distrik</span>
           </div>
-          <span class="bldg-count" id="hud-bldg-count">0 GEDUNG</span>
+          <div class="hud-city-destruction-row">
+            <div class="stat-item">
+              <div class="stat-icon" style="color: var(--color-amber);">${ICONS.city}</div>
+              <span class="destruction-pct" id="hud-destruction">0.0% Kota</span>
+            </div>
+            <span class="bldg-count" id="hud-bldg-count">0 GEDUNG</span>
+          </div>
+          <div class="hud-save-row">
+            <span class="hud-save-status" id="hud-save-status">Tersimpan</span>
+            <button class="hud-new-city-btn interactive" id="hud-new-city-btn" title="Mulai kota baru (Reset WorldState)">KOTA BARU</button>
+          </div>
         </div>
       </div>
 
@@ -184,6 +197,19 @@ export class Hud {
     this.xpValEl = this.hudLayer.querySelector('#hud-xp-val');
     this.xpFillEl = this.hudLayer.querySelector('#hud-xp-fill');
     this.recipeBtn = this.hudLayer.querySelector('#hud-toggle-recipe-btn');
+    this.districtBadgeEl = this.hudLayer.querySelector('#hud-district-badge');
+    this.districtPctEl = this.hudLayer.querySelector('#hud-district-pct');
+    this.saveStatusEl = this.hudLayer.querySelector('#hud-save-status');
+    this.newCityBtn = this.hudLayer.querySelector('#hud-new-city-btn');
+
+    if (this.newCityBtn) {
+      this.newCityBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm('Yakin ingin mereset kerusakan kota dan memulai kota baru dari awal?')) {
+          if (this.onNewCity) this.onNewCity();
+        }
+      });
+    }
 
     if (this.recipeBtn) {
       this.recipeBtn.addEventListener('click', (e) => {
@@ -278,10 +304,29 @@ export class Hud {
       this.killsEl.textContent = state.totalKills;
     }
 
-    // 4. City Destruction Stats
+    // 4. City Destruction Stats & District Telemetry
+    if (state.districtName && (this.cachedState.districtName !== state.districtName || this.cachedState.districtDestructionPct !== state.districtDestructionPct)) {
+      this.cachedState.districtName = state.districtName;
+      this.cachedState.districtDestructionPct = state.districtDestructionPct;
+      if (this.districtBadgeEl) {
+        this.districtBadgeEl.textContent = state.districtName.toUpperCase();
+        if (state.districtColor) this.districtBadgeEl.style.color = state.districtColor;
+      }
+      if (this.districtPctEl) {
+        this.districtPctEl.textContent = `${state.districtDestructionPct}% Distrik`;
+      }
+    }
+
+    if (state.lastSavedStr && this.cachedState.lastSavedStr !== state.lastSavedStr) {
+      this.cachedState.lastSavedStr = state.lastSavedStr;
+      if (this.saveStatusEl) {
+        this.saveStatusEl.textContent = state.lastSavedStr;
+      }
+    }
+
     if (this.cachedState.destructionPct !== state.destructionPct) {
       this.cachedState.destructionPct = state.destructionPct;
-      this.destructionEl.textContent = `${state.destructionPct}%`;
+      this.destructionEl.textContent = `${state.destructionPct}% Kota`;
     }
 
     if (this.cachedState.bldgsCount !== state.bldgsCount) {

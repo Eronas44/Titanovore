@@ -74,11 +74,13 @@ export class CardSystem {
       return;
     }
 
-    const currentLevel = this.levelUpQueue.shift();
+    const queueItem = this.levelUpQueue.shift();
+    const isBonus = typeof queueItem === 'object' && queueItem !== null && queueItem.isBonus;
+    const currentLevel = isBonus ? queueItem.title : queueItem;
     this.isModalOpen = true;
     this.scene.isCardSelecting = true; // Pause gameplay updates
 
-    const cards = this.rollCards();
+    const cards = this.rollCards(false, isBonus);
 
     // Auto-advance if all cards are maxed and no evolution available
     if (cards.length === 0) {
@@ -101,10 +103,23 @@ export class CardSystem {
   }
 
   /**
+   * Enqueues a bonus reward card screen (e.g. from 80% district destruction milestone).
+   * @param {string} sourceName 
+   */
+  queueBonusCardScreen(sourceName = 'DISTRIK RATA') {
+    this.levelUpQueue.push({ isBonus: true, title: sourceName });
+    if (!this.isModalOpen) {
+      this.presentNextLevelUp();
+    }
+  }
+
+  /**
    * Rolls 3 distinct eligible cards based on weights and build synergy.
+   * @param {boolean} preserveEvolution
+   * @param {boolean} isRareBonus - Whether to boost rare/epic weights
    * @returns {Array} Selected eligible card entries
    */
-  rollCards(preserveEvolution = false) {
+  rollCards(preserveEvolution = false, isRareBonus = false) {
     const eligibleCards = [];
     const equippedWeaponCount = this.weaponSystem ? this.weaponSystem.equippedWeapons.size : 0;
 
@@ -133,6 +148,13 @@ export class CardSystem {
       // Calculate weight based on rarity and owned build bonus
       const rarityData = CARD_CONFIG.rarities[card.rarity] || CARD_CONFIG.rarities.COMMON;
       let weight = rarityData.weight;
+
+      if (isRareBonus) {
+        if (card.rarity === 'EPIC') weight *= 4.0;
+        else if (card.rarity === 'RARE') weight *= 3.0;
+        else if (card.rarity === 'UNCOMMON') weight *= 1.5;
+        else weight *= 0.3; // Significantly reduce common cards
+      }
 
       if (card.type === 'weapon' && currentLevel > 0) {
         weight *= CARD_CONFIG.ownedWeaponWeightMultiplier;

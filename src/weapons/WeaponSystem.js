@@ -724,7 +724,8 @@ export class WeaponSystem {
           const angleDiff = Math.abs(Phaser.Math.Angle.Wrap(cellAngle - angle));
           if (angleDiff <= halfArc) {
             const idx = row * cg.cols + col;
-            if (cg.types[idx] >= CELL_TYPES.RESIDENTIAL_LOW && cg.types[idx] <= CELL_TYPES.LANDMARK && cg.hp[idx] > 0) {
+            const cType = cg.types[idx];
+            if ((cType === CELL_TYPES.BUILDING || cType === CELL_TYPES.BUILDING_DETAIL) && cg.hp[idx] > 0) {
               this.addBurningCell(col, row, idx, cellX, cellY);
             }
           }
@@ -1527,7 +1528,8 @@ export class WeaponSystem {
     for (let row = minRow; row <= maxRow; row++) {
       for (let col = minCol; col <= maxCol; col++) {
         const cellIdx = row * cg.cols + col;
-        if (cg.types[cellIdx] < CELL_TYPES.RESIDENTIAL_LOW || cg.types[cellIdx] > CELL_TYPES.LANDMARK) continue;
+        const cType = cg.types[cellIdx];
+        if (cType !== CELL_TYPES.BUILDING && cType !== CELL_TYPES.BUILDING_DETAIL) continue;
         if (cg.hp[cellIdx] <= 0) continue;
 
         const cx = col * cellSize + cellSize / 2;
@@ -1564,7 +1566,8 @@ export class WeaponSystem {
       for (let col = minCol; col <= maxCol; col++) {
         const cellIdx = row * cg.cols + col;
         if (cellIdx < 0 || cellIdx >= cg.totalCells) continue;
-        if (cg.types[cellIdx] < CELL_TYPES.RESIDENTIAL_LOW || cg.types[cellIdx] > CELL_TYPES.LANDMARK) continue;
+        const cType = cg.types[cellIdx];
+        if (cType !== CELL_TYPES.BUILDING && cType !== CELL_TYPES.BUILDING_DETAIL) continue;
         if (cg.hp[cellIdx] <= 0) continue;
 
         const cx = col * cellSize + cellSize / 2;
@@ -1804,7 +1807,8 @@ export class WeaponSystem {
         const row = Math.floor(this.projY[i] / cg.cellSize);
         if (col >= 0 && col < cg.cols && row >= 0 && row < cg.rows) {
           const cellIdx = row * cg.cols + col;
-          if (cg.types[cellIdx] >= CELL_TYPES.RESIDENTIAL_LOW && cg.types[cellIdx] <= CELL_TYPES.LANDMARK && cg.hp[cellIdx] > 0) {
+          const cType = cg.types[cellIdx];
+          if ((cType === CELL_TYPES.BUILDING || cType === CELL_TYPES.BUILDING_DETAIL) && cg.hp[cellIdx] > 0) {
             if (this.projIsRocket[i]) {
               this.explodeRocket(this.projX[i], this.projY[i], damage, this.projBlastRadius[i]);
             } else {
@@ -1863,7 +1867,8 @@ export class WeaponSystem {
         for (let col = minCol; col <= maxCol; col++) {
           const cellIdx = row * cg.cols + col;
           if (cellIdx < 0 || cellIdx >= cg.totalCells) continue;
-          if (cg.types[cellIdx] < CELL_TYPES.RESIDENTIAL_LOW || cg.types[cellIdx] > CELL_TYPES.LANDMARK) continue;
+          const cType = cg.types[cellIdx];
+          if (cType !== CELL_TYPES.BUILDING && cType !== CELL_TYPES.BUILDING_DETAIL) continue;
           if (cg.hp[cellIdx] <= 0) continue;
 
           const cx = col * cellSize + cellSize / 2;

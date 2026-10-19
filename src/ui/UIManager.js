@@ -2,13 +2,15 @@ import { Hud } from './Hud.js';
 import { CardScreen } from './CardScreen.js';
 import { DeathScreen } from './DeathScreen.js';
 import { RecipeBook } from './RecipeBook.js';
+import { Minimap } from './Minimap.js';
 
 /**
- * UIManager.js - Tahap 4A-2 & 4B-2
+ * UIManager.js - Tahap 4A-2 & 5A
  * Master Coordinator for all HTML/CSS UI overlays in Titanovore.
  * Mounted onto <div id="ui-root"> above the Phaser canvas.
  * Manages:
- * - HUD (HP bar, Siaga meter, Timer, Kills, City destruction, Weapons/Passives slots, XP progress, Event banners)
+ * - HUD (HP bar, Siaga meter, Timer, Kills, City destruction, Weapons/Passives slots, XP progress, Event banners, District badges)
+ * - Minimap (Tactical city radar, district zones, rubble tracking, [N] key expand)
  * - CardScreen (Level-up modal with clickable cards, hotkeys [1, 2, 3, R, S], double-click guards)
  * - DeathScreen (Run summary panel and clickable [R] revive button)
  * - RecipeBook (Synergy evolution recipes & progression modal [TAB])
@@ -18,8 +20,9 @@ export class UIManager {
   /**
    * @param {string} rootId - ID of DOM root element (default: 'ui-root')
    * @param {Function} getRecipeStatusCallback - Optional callback for live recipe status
+   * @param {Object} scene - Reference to GameScene
    */
-  constructor(rootId = 'ui-root', getRecipeStatusCallback = null) {
+  constructor(rootId = 'ui-root', getRecipeStatusCallback = null, scene = null) {
     this.root = document.getElementById(rootId);
     if (!this.root) {
       this.root = document.createElement('div');
@@ -29,10 +32,12 @@ export class UIManager {
 
     // Clear any residual child nodes
     this.root.innerHTML = '';
+    this.scene = scene;
     this.getRecipeStatus = getRecipeStatusCallback;
 
     // Initialize sub-modules
     this.hud = new Hud(this.root);
+    this.minimap = scene ? new Minimap(this.root, scene) : null;
     this.cardScreen = new CardScreen(this.root);
     this.deathScreen = new DeathScreen(this.root);
     this.recipeBook = new RecipeBook(this.root, () => {
@@ -41,6 +46,13 @@ export class UIManager {
 
     // Connect HUD recipe button to RecipeBook
     this.hud.onToggleRecipe = () => this.toggleRecipeBook();
+
+    // Connect HUD Kota Baru button
+    this.hud.onNewCity = () => {
+      if (this.scene && typeof this.scene.startNewCity === 'function') {
+        this.scene.startNewCity();
+      }
+    };
   }
 
   /**
@@ -51,6 +63,18 @@ export class UIManager {
   update(state, force = false) {
     if (this.hud) {
       this.hud.update(state, force);
+    }
+    if (this.minimap) {
+      this.minimap.update(performance.now());
+    }
+  }
+
+  /**
+   * Toggles Minimap expanded tactical view [N]
+   */
+  toggleMinimap() {
+    if (this.minimap) {
+      this.minimap.toggleExpanded();
     }
   }
 
@@ -178,12 +202,74 @@ export class UIManager {
   }
 
   /**
+   * Shows a brief futuristic loading screen with progress bar for WorldState loading
+   * @param {string} title 
+   * @param {number} initialProgress (0..1)
+   */
+  showLoadingScreen(title = 'MEMUAT KOTA PERSISTEN', initialProgress = 0) {
+    if (this.loadingOverlay) {
+      this.hideLoadingScreen();
+    }
+
+    this.loadingOverlay = document.createElement('div');
+    this.loadingOverlay.className = 'save-load-overlay';
+    this.loadingOverlay.id = 'save-load-overlay';
+    this.loadingOverlay.innerHTML = `
+      <div class="save-load-box">
+        <div class="save-load-title">${title}</div>
+        <div class="save-load-sub">Menerapkan kondisi kehancuran & distrik...</div>
+        <div class="save-load-bar-track">
+          <div class="save-load-bar-fill" id="save-load-fill" style="width: ${Math.round(initialProgress * 100)}%;"></div>
+        </div>
+        <div class="save-load-pct" id="save-load-pct">${Math.round(initialProgress * 100)}%</div>
+      </div>
+    `;
+
+    this.root.appendChild(this.loadingOverlay);
+    this.loadingFill = this.loadingOverlay.querySelector('#save-load-fill');
+    this.loadingPct = this.loadingOverlay.querySelector('#save-load-pct');
+  }
+
+  /**
+   * Updates loading screen progress (0..1)
+   * @param {number} progress 
+   */
+  updateLoadingProgress(progress) {
+    const pct = Math.min(100, Math.max(0, Math.round(progress * 100)));
+    if (this.loadingFill) {
+      this.loadingFill.style.width = `${pct}%`;
+    }
+    if (this.loadingPct) {
+      this.loadingPct.textContent = `${pct}%`;
+    }
+  }
+
+  /**
+   * Smoothly hides and destroys the loading screen
+   */
+  hideLoadingScreen() {
+    if (!this.loadingOverlay) return;
+    const el = this.loadingOverlay;
+    this.loadingOverlay = null;
+    this.loadingFill = null;
+    this.loadingPct = null;
+
+    el.classList.add('fade-out');
+    setTimeout(() => {
+      if (el && el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    }, 280);
+  }
+
+  /**
    * Resets all UI modals and state on respawn
    */
   reset() {
     if (this.cardScreen) this.cardScreen.close();
     if (this.deathScreen) this.deathScreen.close();
     if (this.recipeBook) this.recipeBook.close();
+    this.hideLoadingScreen();
   }
 
   /**

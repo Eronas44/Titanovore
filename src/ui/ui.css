@@ -1391,6 +1391,223 @@
 .legend-dot.active { background: #ffd700; }
 .legend-dot.pending { background: #64748b; }
 
+/* ==========================================================================
+   Tahap 5A: Districts Telemetry, Save Controls & Tactical Radar Minimap
+   ========================================================================== */
+.hud-district-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.hud-district-badge {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--color-cyan);
+  text-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+}
+
+.hud-district-pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.hud-city-destruction-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.hud-save-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hud-save-status {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: #64748b;
+}
+
+.hud-new-city-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hud-new-city-btn:hover {
+  background: rgba(239, 68, 68, 0.35);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+/* Tactical Minimap Radar */
+.minimap-wrapper {
+  position: absolute;
+  right: 20px;
+  bottom: 44px;
+  z-index: 40;
+  pointer-events: auto;
+  cursor: pointer;
+  background: rgba(9, 14, 26, 0.90);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(8px);
+}
+
+.minimap-wrapper:hover {
+  border-color: var(--color-cyan);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.3);
+}
+
+.minimap-wrapper.expanded {
+  right: 50%;
+  bottom: 50%;
+  transform: translate(50%, 50%);
+  padding: 16px;
+  background: rgba(9, 14, 26, 0.97);
+  border: 1.5px solid var(--color-cyan);
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.95), 0 0 25px rgba(56, 189, 248, 0.35);
+  z-index: 100;
+}
+
+.minimap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+}
+
+.minimap-title {
+  color: #f1f5f9;
+}
+
+.minimap-hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-cyan);
+}
+
+.minimap-canvas {
+  display: block;
+  border-radius: var(--radius-sm);
+  image-rendering: pixelated;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.minimap-footer {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #38bdf8;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Save / Load Transition Overlay */
+.save-load-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(9, 10, 16, 0.94);
+  backdrop-filter: blur(10px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: opacity 0.28s ease;
+}
+
+.save-load-overlay.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.save-load-box {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(56, 189, 248, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 24px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: clamp(280px, 40vw, 420px);
+  text-align: center;
+}
+
+.save-load-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #38bdf8;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+}
+
+.save-load-sub {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.save-load-bar-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 4px;
+}
+
+.save-load-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #06b6d4, #38bdf8);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+  border-radius: 4px;
+  transition: width 0.12s ease;
+}
+
+.save-load-pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;

@@ -177,6 +177,24 @@ export class EnemyManager {
   }
 
   /**
+   * Fast spatial check to verify if any active ground enemy is within radius of (px, py).
+   * Used by RebuildSystem to avoid building on occupied cells.
+   * @param {number} px 
+   * @param {number} py 
+   * @param {number} radius 
+   * @returns {boolean}
+   */
+  hasActiveGroundEnemyNear(px, py, radius = 24) {
+    let found = false;
+    this.queryEnemiesInRadius(px, py, radius, (idx) => {
+      if (this.active[idx] && this.isAir[idx] === 0) {
+        found = true;
+      }
+    });
+    return found;
+  }
+
+  /**
    * Finds the nearest active enemy within radius.
    * Returns { idx, id, x, y, dist, isAir, type } or null if none found.
    */
@@ -374,9 +392,13 @@ export class EnemyManager {
       { id: ENEMY_TYPES.DRONE, key: 'DRONE' }
     ];
 
+    const districtMultipliers = (this.scene.districts && this.scene.districts.getCurrentSpawnWeightMultipliers()) || {};
+
     for (let t = 0; t < typeMapping.length; t++) {
       const item = typeMapping[t];
-      const weight = table.weights[item.key] || 0;
+      const baseWeight = table.weights[item.key] || 0;
+      const mult = districtMultipliers[item.key] !== undefined ? districtMultipliers[item.key] : 1.0;
+      const weight = baseWeight * mult;
       const limit = table.typeLimits[item.key] || 0;
       if (weight > 0 && this.typeCounts[item.id] < limit) {
         eligibleTypes.push({ id: item.id, weight });
