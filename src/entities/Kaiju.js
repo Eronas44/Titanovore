@@ -1,10 +1,12 @@
 import { GAME_CONFIG } from '../config/game.js';
 import { WORLD_CONFIG } from '../config/world.js';
+import { SLOT_CONFIG, getSlotConfig, getAssetConfig } from '../assets/AssetManifest.js';
 
 /**
- * Kaiju Entity
- * Massive apex predator rendered from above with snake-like tail kinematics,
- * heavy inertia, 8-directional movement, layered modular anatomy, and footstep screen shake.
+ * Kaiju Entity - Tahap 6A: Godzilla Top-Down Redesign & Modular Asset Slots
+ * Apex predator rendered from above with snake-like tail kinematics,
+ * heavy inertia, 8-directional movement, layered modular anatomy,
+ * alternating clawed feet, ground shadow, step dust, walk animations, and turret aiming.
  */
 export class Kaiju {
   /**
@@ -23,21 +25,26 @@ export class Kaiju {
     this.vy = 0;
     this.rotation = 0; // Current body orientation (radians)
     this.currentScale = this.config.initialScale;
+    this.displayScale = 0.625; // 96px source -> ~60px display in-game
 
     // Movement state
     this.isMoving = false;
     this.currentSpeed = 0;
     this.slowdownFactor = 0; // Dynamic resistance when crushing dense buildings
 
-    // Step cycle tracking
+    // Step cycle tracking & Walk cycle frames (0..3)
     this.stepDistanceAccumulator = 0;
     this.leftFootStep = false;
+    this.walkFrame = 0;
+    this.idleBreatheTimer = 0;
+    this.attackLunge = 0;
+    this.eyeSparkTimer = 0;
 
     // Slot Layer Architecture
     // Supported slots: 'body', 'back_slot', 'skin_overlay', 'head_slot', 'tail_slot'
     this.layers = new Map();
 
-    // Visual Mutations Architecture (Tahap 4B-1)
+    // Visual Mutations Architecture
     this.mutationSprites = new Map(); // weaponId -> Sprite
     this.tailSpikeSprites = []; // Array<{ sprite, segmentIndex }>
     this.energyShieldSprite = null;
@@ -57,19 +64,19 @@ export class Kaiju {
     this.hasReactorCore = false;
     this.reactorCoreGraphics = null;
 
-    // Setup GameObjects
+    // Setup GameObjects (Shadow, Footprints, Container, Tail, Feet, Input)
     this.setupDisplayObjects();
     this.setupTail();
     this.setupFeet();
     this.setupInput();
 
-    // Fill default layers
+    // Fill default layers (Godzilla 96x96 body)
     this.addLayer('body', 'kaiju_body');
 
     // Centralized scaling
     this.setKaijuScale(this.config.initialScale);
 
-    // HP, Invulnerability & Death (Tahap 3A)
+    // HP, Invulnerability & Death
     this.maxHp = this.config.maxHp || 300;
     this.hp = this.maxHp;
     this.speedMultiplier = 1.0;
@@ -79,9 +86,32 @@ export class Kaiju {
   }
 
   /**
-   * Sets up the main container holding the torso and layered components.
+   * Sets up the main container, ground shadow, and footprint decal pool.
    */
   setupDisplayObjects() {
+    // 1. Ground Shadow (Depth 11: beneath feet at 13 and container at 15)
+    if (this.scene.textures.exists('kaiju_shadow')) {
+      this.shadow = this.scene.add.sprite(this.x + 6, this.y + 8, 'kaiju_shadow');
+      this.shadow.setDepth(11);
+      this.shadow.setAlpha(0.7);
+      this.shadow.setScale(this.currentScale);
+    }
+
+    // 2. Footprint Decal Pool (Depth 10: on ground, persistent rubble footprints)
+    this.footprints = [];
+    this.footprintIndex = 0;
+    this.maxFootprints = 30;
+    if (this.scene.textures.exists('kaiju_footprint')) {
+      for (let i = 0; i < this.maxFootprints; i++) {
+        const fp = this.scene.add.sprite(0, 0, 'kaiju_footprint');
+        fp.setDepth(10);
+        fp.setVisible(false);
+        fp.setAlpha(0);
+        this.footprints.push(fp);
+      }
+    }
+
+    // 3. Main Body Container
     this.container = this.scene.add.container(this.x, this.y);
     this.container.setDepth(15); // Above ground, shadows, and crowd
   }
@@ -165,9 +195,28 @@ export class Kaiju {
     // Remove old layer in this slot if present
     this.removeLayer(slotName);
 
+    // Fetch slot anchor and transform configs
+    const slotConfig = getSlotConfig(slotName);
+    const assetConfig = getAssetConfig(layerKey);
+
     // Create new layer sprite
     const sprite = this.scene.add.sprite(0, 0, layerKey);
     sprite.setOrigin(0.5, 0.5);
+
+    // Position sprite at slot anchor point
+    const anchorX = (slotConfig.anchor ? slotConfig.anchor.x : 0) * this.displayScale;
+    const anchorY = (slotConfig.anchor ? slotConfig.anchor.y : 0) * this.displayScale;
+    sprite.setPosition(anchorX, anchorY);
+
+    // Scale layer sprite: apply asset scale or slot scale
+    let scaleVal = this.displayScale;
+    if (assetConfig && assetConfig.scale) {
+      scaleVal = assetConfig.scale;
+    } else if (slotConfig && slotConfig.scale) {
+      scaleVal = slotConfig.scale * this.displayScale;
+    }
+    sprite.setScale(scaleVal);
+    sprite.setRotation(slotConfig.rotation || 0);
 
     // Adjust stacking order inside container
     // 'body' at bottom, other slots layered on top
@@ -177,11 +226,16 @@ export class Kaiju {
       this.container.add(sprite);
     }
 
-    this.layers.set(slotName, {
+    const layerEntry = {
       sprite,
-      key: layerKey
-    });
+      key: layerKey,
+      slotConfig,
+      assetConfig,
+      currentAimOffset: 0,
+      baseScale: scaleVal
+    };
 
+    this.layers.set(slotName, layerEntry);
     return sprite;
   }
 
@@ -226,7 +280,7 @@ export class Kaiju {
   }
 
   /**
-   * Sets or upgrades visual mutation layer corresponding to an equipped weapon (Tahap 4B-1).
+   * Sets or upgrades visual mutation layer corresponding to an equipped weapon.
    * Tiers: Level 1 (Lv 1-2), Level 3 (Lv 3-4), Level 5 (Lv 5 dramatic special).
    * @param {string} weaponId 
    * @param {number} level 
@@ -241,12 +295,7 @@ export class Kaiju {
 
     if (weaponId === 'electric_skin') {
       this.hasElectricSkinMutation = true;
-      if (!this.mutationSprites.has('electric_skin')) {
-        const sprite = this.scene.add.sprite(0, 0, 'kaiju_electric_skin_0');
-        sprite.setOrigin(0.5, 0.5);
-        this.container.add(sprite);
-        this.mutationSprites.set('electric_skin', sprite);
-      }
+      this.addLayer('skin_overlay', 'kaiju_electric_skin_0');
       return;
     }
 
@@ -269,26 +318,10 @@ export class Kaiju {
       return;
     }
 
-    if (this.mutationSprites.has(weaponId)) {
-      const sprite = this.mutationSprites.get(weaponId);
-      if (sprite && sprite.active) {
-        sprite.setTexture(texKey);
-      }
-    } else {
-      const sprite = this.scene.add.sprite(0, 0, texKey);
-      sprite.setOrigin(0.5, 0.5);
-      if (slot === 'body') {
-        this.container.addAt(sprite, 0);
-      } else {
-        this.container.add(sprite);
-      }
+    // Attach as layer in slot
+    const sprite = this.addLayer(slot, texKey);
+    if (sprite) {
       this.mutationSprites.set(weaponId, sprite);
-    }
-
-    // Keep slot map updated
-    const finalSprite = this.mutationSprites.get(weaponId);
-    if (finalSprite) {
-      this.layers.set(slot, { sprite: finalSprite, key: texKey });
     }
   }
 
@@ -297,18 +330,20 @@ export class Kaiju {
    * @param {string} weaponId 
    */
   removeMutation(weaponId) {
-    if (this.mutationSprites.has(weaponId)) {
-      const sprite = this.mutationSprites.get(weaponId);
-      if (sprite) {
-        if (this.container && typeof this.container.remove === 'function') {
-          this.container.remove(sprite);
-        }
-        if (typeof sprite.destroy === 'function') {
-          sprite.destroy();
-        }
-      }
-      this.mutationSprites.delete(weaponId);
-    }
+    const slotMap = {
+      claw: 'body',
+      back_cannon: 'back_slot',
+      back_rockets: 'back_slot',
+      electric_skin: 'skin_overlay',
+      body_spikes: 'skin_overlay',
+      fire_breath: 'head_slot',
+      laser_eyes: 'head_slot',
+      quake_stomp: 'body',
+      spiked_tail: 'tail_slot'
+    };
+    const slot = slotMap[weaponId] || 'back_slot';
+    this.removeLayer(slot);
+    this.mutationSprites.delete(weaponId);
   }
 
   /**
@@ -323,16 +358,10 @@ export class Kaiju {
     }
 
     this.removeMutation(evolutionId);
-
-    const sprite = this.scene.add.sprite(0, 0, texKey);
-    sprite.setOrigin(0.5, 0.5);
-    if (slot === 'body') {
-      this.container.addAt(sprite, 0);
-    } else {
-      this.container.add(sprite);
+    const sprite = this.addLayer(slot, texKey);
+    if (sprite) {
+      this.mutationSprites.set(evolutionId, sprite);
     }
-    this.mutationSprites.set(evolutionId, sprite);
-    this.layers.set(slot, { sprite, key: texKey });
   }
 
   /**
@@ -392,11 +421,8 @@ export class Kaiju {
    */
   clearAllMutations() {
     if (this.mutationSprites) {
-      this.mutationSprites.forEach(sprite => {
-        if (sprite) {
-          this.container.remove(sprite);
-          sprite.destroy();
-        }
+      this.mutationSprites.forEach((sprite, key) => {
+        this.removeMutation(key);
       });
       this.mutationSprites.clear();
     }
@@ -417,6 +443,9 @@ export class Kaiju {
       this.reactorCoreGraphics = null;
     }
     this.hasReactorCore = false;
+
+    // Restore base body layer
+    this.addLayer('body', 'kaiju_body');
   }
 
   /**
@@ -436,13 +465,25 @@ export class Kaiju {
   }
 
   /**
+   * Triggers micro attack recoil/lunge animation without altering weapon timing
+   */
+  playAttackAnimation() {
+    this.attackLunge = 3.0; // 3px forward snap
+  }
+
+  /**
    * Centralized Kaiju scale function.
-   * Readies Kaiju for Phase 2+ evolution, resizing body, feet, tail segments, and collision box.
+   * Resizes body, feet, tail segments, shadow, and collision box.
    * @param {number} scale 
    */
   setKaijuScale(scale) {
     this.currentScale = scale;
     this.container.setScale(scale);
+
+    // Scale shadow
+    if (this.shadow) {
+      this.shadow.setScale(scale);
+    }
 
     // Scale feet
     if (this.leftFoot && this.rightFoot) {
@@ -452,11 +493,41 @@ export class Kaiju {
 
     // Scale tail segments
     if (this.tailSegments) {
-      this.tailSegments.forEach((seg, idx) => {
+      this.tailSegments.forEach((seg) => {
         seg.sprite.setScale(scale);
         seg.targetDist = this.config.tail.segmentDistance * scale;
       });
     }
+  }
+
+  /**
+   * Spawns a clawed footprint decal at foot landing position
+   * @param {number} x 
+   * @param {number} y 
+   * @param {number} angle 
+   */
+  spawnFootprint(x, y, angle) {
+    if (!this.footprints || this.footprints.length === 0) return;
+    const fp = this.footprints[this.footprintIndex];
+    this.footprintIndex = (this.footprintIndex + 1) % this.maxFootprints;
+
+    fp.setPosition(x, y);
+    fp.setRotation(angle);
+    fp.setScale(this.currentScale * 0.9);
+    fp.setAlpha(0.55);
+    fp.setVisible(true);
+
+    // Smooth fadeout over 3.5s
+    this.scene.tweens.killTweensOf(fp);
+    this.scene.tweens.add({
+      targets: fp,
+      alpha: 0,
+      duration: 3500,
+      ease: 'Linear',
+      onComplete: () => {
+        fp.setVisible(false);
+      }
+    });
   }
 
   /**
@@ -497,15 +568,70 @@ export class Kaiju {
       });
     }
 
-    // Subtle breathing / pulse effect for active mutation layers
-    const mutationPulse = 1.0 + Math.sin(time * 0.005) * 0.035;
-    for (const sprite of this.mutationSprites.values()) {
-      if (sprite && sprite.active) {
-        sprite.setScale(mutationPulse);
+    // 1. Walk Animation vs Idle Breathing
+    const bodyEntry = this.layers.get('body');
+    if (bodyEntry && bodyEntry.sprite) {
+      if (this.isMoving) {
+        // 4-frame walk cycle based on stride
+        const strideProgress = (this.stepDistanceAccumulator / (this.config.stepDistance * this.currentScale)) % 1.0;
+        this.walkFrame = Math.floor(strideProgress * 4) % 4;
+        const frameKey = `kaiju_walk_${this.walkFrame}`;
+        if (this.scene.textures.exists(frameKey)) {
+          bodyEntry.sprite.setTexture(frameKey);
+        }
+        bodyEntry.sprite.setScale(this.displayScale);
+      } else {
+        // Idle gentle breathing pulse
+        if (this.scene.textures.exists('kaiju_body')) {
+          bodyEntry.sprite.setTexture('kaiju_body');
+        }
+        const breath = 1.0 + Math.sin(time * 0.0035) * 0.022;
+        bodyEntry.sprite.setScale(this.displayScale * breath);
       }
     }
 
-    // Energy Shield rotation & recharge timer
+    // 2. Micro attack recoil recovery
+    if (this.attackLunge > 0) {
+      this.attackLunge = Math.max(0, this.attackLunge - dt * 14);
+    }
+
+    // 3. Ground Shadow Update (Follows Kaiju obliquely)
+    if (this.shadow) {
+      const shadowOffset = 7 * this.currentScale;
+      this.shadow.setPosition(this.x + shadowOffset * 0.6, this.y + shadowOffset * 0.8);
+      this.shadow.setRotation(this.rotation);
+      this.shadow.setScale(this.currentScale);
+    }
+
+    // 4. Turret Aiming for 'back_slot' (Tracks nearest enemy within clamp angle)
+    const backEntry = this.layers.get('back_slot');
+    if (backEntry && backEntry.sprite && backEntry.slotConfig && backEntry.slotConfig.canAim) {
+      let targetAimDiff = 0;
+      if (this.scene && this.scene.enemyManager && this.scene.enemyManager.enemies) {
+        let nearestEnemy = null;
+        let minDist = 220; // 220 px detection arc
+        for (const e of this.scene.enemyManager.enemies) {
+          if (e.active && e.isAlive) {
+            const dist = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y);
+            if (dist < minDist) {
+              minDist = dist;
+              nearestEnemy = e;
+            }
+          }
+        }
+        if (nearestEnemy) {
+          const worldAngleToEnemy = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
+          const diff = Phaser.Math.Angle.Wrap(worldAngleToEnemy - this.rotation);
+          const maxAim = backEntry.slotConfig.maxAimAngle || 0.65;
+          targetAimDiff = Phaser.Math.Clamp(diff, -maxAim, maxAim);
+        }
+      }
+      const speed = backEntry.slotConfig.aimTurnSpeed || 6.0;
+      backEntry.currentAimOffset += (targetAimDiff - backEntry.currentAimOffset) * Math.min(1, speed * dt);
+      backEntry.sprite.setRotation((backEntry.slotConfig.rotation || 0) + backEntry.currentAimOffset);
+    }
+
+    // 5. Energy Shield rotation & recharge timer
     if (this.maxShield > 0) {
       if (this.shieldRechargeTimer > 0) {
         this.shieldRechargeTimer = Math.max(0, this.shieldRechargeTimer - dt);
@@ -526,7 +652,7 @@ export class Kaiju {
       }
     }
 
-    // Inti Reaktor pulsating core visual
+    // 6. Inti Reaktor pulsating core visual
     if (this.hasReactorCore && this.reactorCoreGraphics) {
       this.reactorCoreGraphics.clear();
       const pulse = 0.8 + Math.sin(time * 0.007) * 0.25;
@@ -538,8 +664,11 @@ export class Kaiju {
       this.reactorCoreGraphics.fillCircle(0, 0, 3.5);
     }
 
-    // Sync container position
-    this.container.setPosition(this.x, this.y);
+    // 7. Sync container position (including micro attack lunge)
+    const lungeDist = this.attackLunge * this.currentScale;
+    const drawX = this.x + Math.cos(this.rotation) * lungeDist;
+    const drawY = this.y + Math.sin(this.rotation) * lungeDist;
+    this.container.setPosition(drawX, drawY);
   }
 
   /**
@@ -767,7 +896,7 @@ export class Kaiju {
   }
 
   /**
-   * Alternating footstep animation and subtle step screen shake
+   * Alternating footstep animation, footprints, step dust, and subtle screen shake
    */
   updateFeetAndSteps(dt) {
     const scale = this.currentScale;
@@ -780,7 +909,19 @@ export class Kaiju {
         this.stepDistanceAccumulator = 0;
         this.leftFootStep = !this.leftFootStep;
 
-        // Subtle, smooth camera screen shake
+        // Foot location where step landed
+        const footX = this.leftFootStep ? this.leftFoot.x : this.rightFoot.x;
+        const footY = this.leftFootStep ? this.leftFoot.y : this.rightFoot.y;
+
+        // 1. Spawn clawed footprint decal
+        this.spawnFootprint(footX, footY, this.rotation);
+
+        // 2. Emit step dust puff
+        if (this.scene && this.scene.particleManager) {
+          this.scene.particleManager.emitDust(footX, footY, 2, this.currentScale);
+        }
+
+        // 3. Subtle, smooth camera screen shake
         this.scene.cameras.main.shake(
           this.config.stepShakeDuration,
           this.config.stepShakeIntensity
@@ -842,7 +983,7 @@ export class Kaiju {
   }
 
   /**
-   * Returns oriented ellipse parameters of the Kaiju torso footprint
+   * Returns oriented ellipse parameters of the Kaiju torso footprint (Hitbox UNCHANGED)
    */
   getBodyFootprint() {
     return {
@@ -868,7 +1009,7 @@ export class Kaiju {
   }
 
   /**
-   * Resets Kaiju state cleanly for world restart
+   * Resets Kaiju state cleanly for world restart / respawn
    */
   resetPosition(x, y) {
     this.x = x;
@@ -879,6 +1020,12 @@ export class Kaiju {
     this.slowdownFactor = 0;
     this.container.setPosition(x, y);
     this.container.setRotation(0);
+
+    if (this.shadow) {
+      this.shadow.setPosition(x + 6, y + 8);
+      this.shadow.setRotation(0);
+      this.shadow.setVisible(true);
+    }
 
     const { segmentDistance } = this.config.tail;
     this.tailSegments.forEach((seg, i) => {
@@ -903,10 +1050,18 @@ export class Kaiju {
   }
 
   /**
-   * Clean up all game objects
+   * Clean up all game objects without leaks
    */
   destroy() {
     this.clearAllMutations();
+    if (this.shadow) {
+      this.shadow.destroy();
+      this.shadow = null;
+    }
+    if (this.footprints) {
+      this.footprints.forEach(fp => fp.destroy());
+      this.footprints = [];
+    }
     this.container.destroy();
     if (this.leftFoot) this.leftFoot.destroy();
     if (this.rightFoot) this.rightFoot.destroy();

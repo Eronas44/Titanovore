@@ -438,6 +438,14 @@ export class GameScene extends Phaser.Scene {
         }
       }
     });
+
+    // 21. [U] Key: (Tahap 6A) Toggle Godzilla Mutation Layer & Anchor Inspector Overlay
+    this.input.keyboard.on('keydown-U', (event) => {
+      event.preventDefault();
+      if (this.uiManager) {
+        this.uiManager.toggleLayerInspector();
+      }
+    });
   }
 
   /**
@@ -816,6 +824,11 @@ export class GameScene extends Phaser.Scene {
         this.cardSystem.update(dt);
       }
       this.updateHUD();
+      return;
+    }
+
+    // 1c. Layer Inspector Tool Pause [U]
+    if (this.uiManager && this.uiManager.isLayerInspectorOpen()) {
       return;
     }
 

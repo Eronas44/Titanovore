@@ -308,6 +308,10 @@ export class WeaponSystem {
         if (entry.timer <= 0) {
           entry.timer = effectiveCooldown;
 
+          if (id !== 'body_spikes' && id !== 'electric_skin' && this.kaiju && typeof this.kaiju.playAttackAnimation === 'function') {
+            this.kaiju.playAttackAnimation();
+          }
+
           switch (id) {
             case 'claw':
               this.executeClawAttack(lvlData, false);

@@ -23,157 +23,430 @@ export class TextureGenerator {
   }
 
   /**
-   * Kaiju Body, Feet, and Tail Segment textures
+   * Redesigned Kaiju Textures - Tahap 6A: Godzilla-style Apex Predator
+   * 96x96 px high-detail source canvas displayed at ~56-64 px in game.
+   * Features:
+   * - Angular predator skull, snout, jaws, glowing neon-amber eyes with white core
+   * - Thick muscular reptilian neck & textured scaly torso
+   * - 3 symmetrical rows of jagged dorsal spines with glowing yellow-green neon tips
+   * - Muscular forelimbs with razor claws
+   * - 4-frame walk cycle frames (kaiju_walk_0 .. 3)
+   * - Crisp dark outline for contrast across all city districts
+   * - 24x18 clawed feet, ground shadow, and clawed footprints
    */
   static createKaijuTextures(scene) {
-    const size = GAME_CONFIG.kaiju.baseSize; // 56x56
-    const half = size / 2;
+    const size = 96; // 96x96 px high-resolution source
+    const half = size / 2; // 48
 
-    // 1. Kaiju Body (Top-down view)
-    // Facing RIGHT (0 radians / standard Phaser orientation)
+    // Palet warna khusus Godzilla Top-down
+    const C = {
+      outline: '#030706',          // Dark obsidian silhouette outline
+      skinDark: '#081c10',         // Deep shadow green-black
+      skinBase: '#0e2d1a',         // Kaiju scaly emerald-black
+      skinMid: '#164327',          // Midtone reptilian scale
+      skinLight: '#1f5b35',        // Highlight scales
+      bellyBase: '#255038',        // Pale ventral armor plates
+      bellyLight: '#357351',       // Belly highlight
+      claw: '#fef08a',             // Sharp razor talons
+      clawDark: '#ca8a04',         // Talon base
+      spineBase: '#020617',        // Obsidian dorsal fin base
+      spineMid: '#15803d',         // Dorsal spine core
+      spineNeon: '#84cc16',        // Glowing yellow-green neon fin tip
+      spineHot: '#fef08a',         // Neon apex apex highlight
+      spineGlow: 'rgba(132, 204, 22, 0.22)', // Subtle neon aura
+      eyeHalo: 'rgba(250, 204, 21, 0.35)',   // Eye glow aura
+      eyeSclera: '#facc15',        // Glowing amber eye
+      eyeCore: '#ffffff',          // White hot eye pupil spark
+      eyePupil: '#09090b',         // Slit pupil
+      nostril: '#050f09',          // Snout nostrils
+      tooth: '#f8fafc'             // Serrated teeth specks
+    };
+
+    /**
+     * Helper to draw Godzilla body at specific walk animation frame
+     * @param {CanvasRenderingContext2D} ctx 
+     * @param {number} frame - 0: Neutral, 1: Left arm forward, 2: Neutral passing, 3: Right arm forward
+     */
+    const drawGodzilla = (ctx, frame = 0) => {
+      ctx.imageSmoothingEnabled = false;
+
+      // Arm swing offsets for 4-frame walk cycle
+      let leftArmX = 0, leftArmY = 0;
+      let rightArmX = 0, rightArmY = 0;
+      let torsoFlexY = 0;
+
+      if (frame === 1) {
+        leftArmX = 4; leftArmY = -2;
+        rightArmX = -3; rightArmY = 2;
+        torsoFlexY = -1;
+      } else if (frame === 3) {
+        leftArmX = -3; leftArmY = 2;
+        rightArmX = 4; rightArmY = -2;
+        torsoFlexY = 1;
+      }
+
+      // 1. OUTLINE SILHOUETTE (Deep obsidian, gives crisp reading on any background)
+      ctx.fillStyle = C.outline;
+
+      // Torso & Pelvis base
+      ctx.beginPath();
+      ctx.ellipse(half - 4, half + torsoFlexY, 28, 20, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Thick Neck & Head base
+      ctx.beginPath();
+      ctx.ellipse(half + 18, half + torsoFlexY * 0.5, 18, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Angular Snout wedge
+      ctx.beginPath();
+      ctx.moveTo(half + 22, half - 10);
+      ctx.lineTo(half + 38, half - 5);
+      ctx.lineTo(half + 40, half);
+      ctx.lineTo(half + 38, half + 5);
+      ctx.lineTo(half + 22, half + 10);
+      ctx.closePath();
+      ctx.fill();
+
+      // Left Arm Silhouette (Top)
+      ctx.beginPath();
+      ctx.ellipse(half + 10 + leftArmX, half - 21 + leftArmY, 11, 7, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      // Left Forearm & Hand
+      ctx.beginPath();
+      ctx.ellipse(half + 20 + leftArmX, half - 23 + leftArmY, 9, 5, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Right Arm Silhouette (Bottom)
+      ctx.beginPath();
+      ctx.ellipse(half + 10 + rightArmX, half + 21 + rightArmY, 11, 7, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      // Right Forearm & Hand
+      ctx.beginPath();
+      ctx.ellipse(half + 20 + rightArmX, half + 23 + rightArmY, 9, 5, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. MAIN SCALY REPTILIAN SKIN
+      ctx.fillStyle = C.skinBase;
+
+      // Torso
+      ctx.beginPath();
+      ctx.ellipse(half - 4, half + torsoFlexY, 26, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Neck
+      ctx.beginPath();
+      ctx.ellipse(half + 16, half + torsoFlexY * 0.5, 16, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Angular Snout
+      ctx.beginPath();
+      ctx.moveTo(half + 20, half - 8);
+      ctx.lineTo(half + 36, half - 4);
+      ctx.lineTo(half + 38, half);
+      ctx.lineTo(half + 36, half + 4);
+      ctx.lineTo(half + 20, half + 8);
+      ctx.closePath();
+      ctx.fill();
+
+      // Left Arm Body
+      ctx.fillStyle = C.skinMid;
+      ctx.beginPath();
+      ctx.ellipse(half + 10 + leftArmX, half - 20 + leftArmY, 9, 5, -0.4, 0, Math.PI * 2);
+      ctx.ellipse(half + 19 + leftArmX, half - 22 + leftArmY, 7, 4, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Right Arm Body
+      ctx.beginPath();
+      ctx.ellipse(half + 10 + rightArmX, half + 20 + rightArmY, 9, 5, 0.4, 0, Math.PI * 2);
+      ctx.ellipse(half + 19 + rightArmX, half + 22 + rightArmY, 7, 4, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Claws on Left Arm
+      ctx.fillStyle = C.claw;
+      ctx.fillRect(half + 25 + leftArmX, half - 25 + leftArmY, 4, 2);
+      ctx.fillRect(half + 26 + leftArmX, half - 23 + leftArmY, 4, 2);
+      ctx.fillRect(half + 24 + leftArmX, half - 21 + leftArmY, 4, 2);
+
+      // Claws on Right Arm
+      ctx.fillRect(half + 25 + rightArmX, half + 24 + rightArmY, 4, 2);
+      ctx.fillRect(half + 26 + rightArmX, half + 22 + rightArmY, 4, 2);
+      ctx.fillRect(half + 24 + rightArmX, half + 20 + rightArmY, 4, 2);
+
+      // 3. TEXTURED SCALY PATTERNS & SHADING (Texture depth)
+      ctx.fillStyle = C.skinDark;
+      // Flank rib contours
+      for (let rx = -20; rx <= 8; rx += 7) {
+        ctx.fillRect(half + rx, half - 15 + torsoFlexY, 4, 3);
+        ctx.fillRect(half + rx, half + 12 + torsoFlexY, 4, 3);
+      }
+
+      ctx.fillStyle = C.skinLight;
+      // Scale highlights along upper shoulders
+      for (let sx = -14; sx <= 12; sx += 6) {
+        ctx.fillRect(half + sx, half - 11 + torsoFlexY, 3, 2);
+        ctx.fillRect(half + sx, half + 9 + torsoFlexY, 3, 2);
+      }
+
+      // 4. VENTRAL BELLY PLATES (Lighter chest & belly armor)
+      ctx.fillStyle = C.bellyBase;
+      ctx.beginPath();
+      ctx.ellipse(half - 2, half + torsoFlexY, 15, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Belly transverse scutes
+      ctx.fillStyle = C.bellyLight;
+      for (let bx = -12; bx <= 8; bx += 5) {
+        ctx.fillRect(half + bx, half - 5 + torsoFlexY, 3, 10);
+      }
+
+      // 5. HEAD DETAILS (Jaw, Snout, Teeth, Nostrils)
+      // Nostrils
+      ctx.fillStyle = C.nostril;
+      ctx.fillRect(half + 34, half - 3, 2, 2);
+      ctx.fillRect(half + 34, half + 1, 2, 2);
+
+      // Tooth tips at jaw margins
+      ctx.fillStyle = C.tooth;
+      ctx.fillRect(half + 28, half - 7, 2, 1);
+      ctx.fillRect(half + 32, half - 5, 2, 1);
+      ctx.fillRect(half + 28, half + 6, 2, 1);
+      ctx.fillRect(half + 32, half + 4, 2, 1);
+
+      // 6. THREE SYMMETRICAL ROWS OF DORSAL SPINES (Godzilla signature!)
+      // Aura glow behind central dorsal plates
+      ctx.fillStyle = C.spineGlow;
+      ctx.beginPath();
+      ctx.ellipse(half - 8, half + torsoFlexY, 26, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // A. ROW 1: Center Main Dorsal Plates (Spine)
+      const centerPlates = [
+        { x: half - 24, w: 5, h: 4, tip: 3 },
+        { x: half - 17, w: 6, h: 6, tip: 5 },
+        { x: half - 10, w: 7, h: 8, tip: 6 },
+        { x: half - 2,  w: 8, h: 9, tip: 7 }, // Largest central plate
+        { x: half + 6,  w: 7, h: 8, tip: 6 },
+        { x: half + 14, w: 6, h: 6, tip: 4 },
+        { x: half + 21, w: 4, h: 4, tip: 3 }
+      ];
+
+      // Draw center plates
+      centerPlates.forEach(p => {
+        const px = p.x;
+        const py = half + torsoFlexY;
+
+        // Dark obsidian base
+        ctx.fillStyle = C.spineBase;
+        ctx.fillRect(px - p.w / 2 - 1, py - p.h, p.w + 2, p.h * 2);
+
+        // Core spine green
+        ctx.fillStyle = C.spineMid;
+        ctx.fillRect(px - p.w / 2, py - p.h + 1, p.w, (p.h - 1) * 2);
+
+        // Neon yellow-green glowing tips
+        ctx.fillStyle = C.spineNeon;
+        ctx.fillRect(px - 1, py - p.tip, 3, p.tip * 2);
+
+        // Bright white-hot apex highlight
+        ctx.fillStyle = C.spineHot;
+        ctx.fillRect(px, py - Math.floor(p.tip * 0.6), 1, Math.floor(p.tip * 1.2));
+      });
+
+      // B. ROW 2 & 3: Flanking Dorsal Rows (Parallel lateral jagged spines)
+      const flankPlatesX = [half - 18, half - 11, half - 3, half + 5, half + 13];
+      flankPlatesX.forEach((fx, i) => {
+        const fh = 3 + (i % 3);
+        const yTop = half - 7 + torsoFlexY;
+        const yBottom = half + 7 + torsoFlexY;
+
+        // Top flanking spine
+        ctx.fillStyle = C.spineBase;
+        ctx.fillRect(fx - 2, yTop - fh, 4, fh * 2);
+        ctx.fillStyle = C.spineNeon;
+        ctx.fillRect(fx - 1, yTop - Math.floor(fh * 0.7), 2, Math.floor(fh * 1.4));
+
+        // Bottom flanking spine
+        ctx.fillStyle = C.spineBase;
+        ctx.fillRect(fx - 2, yBottom - fh, 4, fh * 2);
+        ctx.fillStyle = C.spineNeon;
+        ctx.fillRect(fx - 1, yBottom - Math.floor(fh * 0.7), 2, Math.floor(fh * 1.4));
+      });
+
+      // 7. GLOWING PREDATOR EYES (Menacing glowing neon amber)
+      const eyeTopY = half - 9;
+      const eyeBottomY = half + 9;
+      const eyeX = half + 26;
+
+      // Soft eye glow aura
+      ctx.fillStyle = C.eyeHalo;
+      ctx.beginPath();
+      ctx.ellipse(eyeX, eyeTopY, 6, 4, -0.2, 0, Math.PI * 2);
+      ctx.ellipse(eyeX, eyeBottomY, 6, 4, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Glowing Amber Sclera
+      ctx.fillStyle = C.eyeSclera;
+      ctx.beginPath();
+      ctx.ellipse(eyeX, eyeTopY, 4, 2.5, -0.3, 0, Math.PI * 2);
+      ctx.ellipse(eyeX, eyeBottomY, 4, 2.5, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Slit Pupils
+      ctx.fillStyle = C.eyePupil;
+      ctx.fillRect(eyeX, eyeTopY - 2, 1, 4);
+      ctx.fillRect(eyeX, eyeBottomY - 2, 1, 4);
+
+      // Bright white eye spark
+      ctx.fillStyle = C.eyeCore;
+      ctx.fillRect(eyeX + 1, eyeTopY - 1, 1, 1);
+      ctx.fillRect(eyeX + 1, eyeBottomY - 1, 1, 1);
+    };
+
+    // 1. Generate base static 'kaiju_body' (Frame 0: Neutral)
     if (!scene.textures.exists('kaiju_body')) {
       const canvas = scene.textures.createCanvas('kaiju_body', size, size);
       const ctx = canvas.getContext('2d');
-      ctx.imageSmoothingEnabled = false;
-
-      // Dark shadow underneath body
-      ctx.fillStyle = 'rgba(10, 8, 16, 0.4)';
-      ctx.beginPath();
-      ctx.ellipse(half + 2, half + 3, 20, 16, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Outer Silhouette / Dark Outline
-      ctx.fillStyle = PALETTE.kaijuGreenDarkHex;
-      ctx.beginPath();
-      // Main torso oval
-      ctx.ellipse(half - 2, half, 18, 14, 0, 0, Math.PI * 2);
-      // Head base extending to the right
-      ctx.ellipse(half + 14, half, 11, 9, 0, 0, Math.PI * 2);
-      // Forelimb shoulders
-      ctx.ellipse(half + 6, half - 13, 7, 5, -0.4, 0, Math.PI * 2);
-      ctx.ellipse(half + 6, half + 13, 7, 5, 0.4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Kaiju Main Body Green
-      ctx.fillStyle = PALETTE.kaijuGreenHex;
-      ctx.beginPath();
-      ctx.ellipse(half - 2, half, 16, 12, 0, 0, Math.PI * 2);
-      ctx.ellipse(half + 14, half, 9, 7, 0, 0, Math.PI * 2);
-      ctx.ellipse(half + 6, half - 12, 5, 4, -0.4, 0, Math.PI * 2);
-      ctx.ellipse(half + 6, half + 12, 5, 4, 0.4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Scaled Arm Claws
-      ctx.fillStyle = PALETTE.kaijuGreenLightHex;
-      // Right arm claws
-      ctx.fillRect(half + 12, half - 15, 3, 2);
-      ctx.fillRect(half + 10, half - 17, 3, 2);
-      // Left arm claws
-      ctx.fillRect(half + 12, half + 13, 3, 2);
-      ctx.fillRect(half + 10, half + 15, 3, 2);
-
-      // Dorsal Plates / Spines along the spine (center axis)
-      const dorsalX = [half - 14, half - 8, half - 2, half + 4, half + 9];
-      const dorsalSizes = [3, 4, 5, 4, 3];
-      for (let i = 0; i < dorsalX.length; i++) {
-        const x = dorsalX[i];
-        const s = dorsalSizes[i];
-        // Dark base
-        ctx.fillStyle = PALETTE.kaijuDorsalFinHex;
-        ctx.fillRect(x - 2, half - s, 4, s * 2);
-        // Highlight edge
-        ctx.fillStyle = PALETTE.kaijuGreenLightHex;
-        ctx.fillRect(x - 1, half - Math.floor(s / 2), 2, s);
-      }
-
-      // Snout details / nostrils
-      ctx.fillStyle = PALETTE.kaijuGreenDarkHex;
-      ctx.fillRect(half + 21, half - 2, 2, 1);
-      ctx.fillRect(half + 21, half + 1, 2, 1);
-
-      // Yellow Kaiju Eyes (Angled predator eyes on sides of head)
-      ctx.fillStyle = PALETTE.kaijuEyeYellowHex;
-      // Top eye
-      ctx.beginPath();
-      ctx.ellipse(half + 16, half - 5, 3, 2, -0.3, 0, Math.PI * 2);
-      ctx.fill();
-      // Bottom eye
-      ctx.beginPath();
-      ctx.ellipse(half + 16, half + 5, 3, 2, 0.3, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Slit pupils
-      ctx.fillStyle = PALETTE.kaijuEyePupilHex;
-      ctx.fillRect(half + 16, half - 6, 1, 3);
-      ctx.fillRect(half + 16, half + 4, 1, 3);
-
-      // Eye highlight spark
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(half + 17, half - 5, 1, 1);
-      ctx.fillRect(half + 17, half + 5, 1, 1);
-
+      drawGodzilla(ctx, 0);
       canvas.refresh();
     }
 
-    // 2. Kaiju Foot Texture (for stepping animation)
+    // 2. Generate 4 walk animation frames ('kaiju_walk_0' to 'kaiju_walk_3')
+    for (let f = 0; f < 4; f++) {
+      const key = `kaiju_walk_${f}`;
+      if (!scene.textures.exists(key)) {
+        const wCanvas = scene.textures.createCanvas(key, size, size);
+        const wCtx = wCanvas.getContext('2d');
+        drawGodzilla(wCtx, f);
+        wCanvas.refresh();
+      }
+    }
+
+    // 3. Generate combined 4-frame Spritesheet 'kaiju_walk' (384x96 px)
+    if (!scene.textures.exists('kaiju_walk')) {
+      const sheetCanvas = scene.textures.createCanvas('kaiju_walk', size * 4, size);
+      const sctx = sheetCanvas.getContext('2d');
+      for (let f = 0; f < 4; f++) {
+        sctx.save();
+        sctx.translate(f * size, 0);
+        drawGodzilla(sctx, f);
+        sctx.restore();
+      }
+      sheetCanvas.refresh();
+    }
+
+    // 4. Kaiju Clawed Foot Texture (24x18 px source)
     if (!scene.textures.exists('kaiju_foot')) {
-      const footCanvas = scene.textures.createCanvas('kaiju_foot', 16, 12);
+      const footCanvas = scene.textures.createCanvas('kaiju_foot', 24, 18);
       const fctx = footCanvas.getContext('2d');
       fctx.imageSmoothingEnabled = false;
 
-      // Dark foot base
-      fctx.fillStyle = PALETTE.kaijuGreenDarkHex;
+      // Dark obsidian outline
+      fctx.fillStyle = C.outline;
       fctx.beginPath();
-      fctx.ellipse(7, 6, 6, 4, 0, 0, Math.PI * 2);
+      fctx.ellipse(10, 9, 9, 7, 0, 0, Math.PI * 2);
       fctx.fill();
 
-      // Green foot
-      fctx.fillStyle = PALETTE.kaijuGreenHex;
+      // Foot base scaly green
+      fctx.fillStyle = C.skinBase;
       fctx.beginPath();
-      fctx.ellipse(6, 6, 5, 3, 0, 0, Math.PI * 2);
+      fctx.ellipse(10, 9, 8, 6, 0, 0, Math.PI * 2);
       fctx.fill();
 
-      // 3 Claws pointing outward
-      fctx.fillStyle = PALETTE.kaijuGreenLightHex;
-      fctx.fillRect(11, 3, 3, 2);
-      fctx.fillRect(12, 5, 3, 2);
-      fctx.fillRect(11, 7, 3, 2);
+      // Foot dorsal ridge
+      fctx.fillStyle = C.skinLight;
+      fctx.fillRect(6, 7, 6, 4);
+
+      // 3 Front Claws
+      fctx.fillStyle = C.claw;
+      fctx.fillRect(17, 4, 5, 2);
+      fctx.fillRect(18, 8, 6, 2);
+      fctx.fillRect(17, 12, 5, 2);
+
+      // Rear dewclaw spur
+      fctx.fillRect(1, 8, 3, 2);
 
       footCanvas.refresh();
     }
 
-    // 3. Tail Segments (Decreasing size)
+    // 5. Ground Shadow Texture (64x40 px soft dark oblique ellipse)
+    if (!scene.textures.exists('kaiju_shadow')) {
+      const shadowCanvas = scene.textures.createCanvas('kaiju_shadow', 64, 40);
+      const sctx = shadowCanvas.getContext('2d');
+      sctx.imageSmoothingEnabled = false;
+
+      // Soft oblique shadow gradient
+      const grad = sctx.createRadialGradient(32, 20, 4, 32, 20, 26);
+      grad.addColorStop(0, 'rgba(3, 5, 8, 0.45)');
+      grad.addColorStop(0.7, 'rgba(4, 7, 10, 0.28)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      sctx.fillStyle = grad;
+      sctx.beginPath();
+      sctx.ellipse(32, 20, 28, 16, 0, 0, Math.PI * 2);
+      sctx.fill();
+
+      shadowCanvas.refresh();
+    }
+
+    // 6. Clawed Footprint Decal Texture (18x14 px)
+    if (!scene.textures.exists('kaiju_footprint')) {
+      const printCanvas = scene.textures.createCanvas('kaiju_footprint', 18, 14);
+      const pctx = printCanvas.getContext('2d');
+      pctx.imageSmoothingEnabled = false;
+
+      // Dark indented impression
+      pctx.fillStyle = 'rgba(8, 12, 10, 0.65)';
+      pctx.beginPath();
+      pctx.ellipse(7, 7, 5, 4, 0, 0, Math.PI * 2);
+      pctx.fill();
+
+      // 3 claw impressions
+      pctx.fillRect(12, 3, 4, 2);
+      pctx.fillRect(13, 6, 4, 2);
+      pctx.fillRect(12, 9, 4, 2);
+
+      printCanvas.refresh();
+    }
+
+    // 7. Tail Segments (Decreasing size with dorsal spines)
     const { segmentRadius } = GAME_CONFIG.kaiju.tail;
     for (let i = 0; i < segmentRadius.length; i++) {
       const key = `kaiju_tail_${i}`;
       if (!scene.textures.exists(key)) {
         const r = segmentRadius[i];
-        const segSize = (r + 4) * 2;
+        const segSize = Math.max(16, (r + 6) * 2);
         const segHalf = segSize / 2;
         const scanvas = scene.textures.createCanvas(key, segSize, segSize);
         const sctx = scanvas.getContext('2d');
         sctx.imageSmoothingEnabled = false;
 
-        // Base dark outline
-        sctx.fillStyle = PALETTE.kaijuGreenDarkHex;
+        // Dark outline
+        sctx.fillStyle = C.outline;
         sctx.beginPath();
-        sctx.arc(segHalf, segHalf, r + 1, 0, Math.PI * 2);
+        sctx.arc(segHalf, segHalf, r + 2, 0, Math.PI * 2);
         sctx.fill();
 
-        // Green body
-        sctx.fillStyle = PALETTE.kaijuGreenHex;
+        // Scaly emerald body
+        sctx.fillStyle = C.skinBase;
         sctx.beginPath();
-        sctx.arc(segHalf, segHalf, r - 0.5, 0, Math.PI * 2);
+        sctx.arc(segHalf, segHalf, r, 0, Math.PI * 2);
         sctx.fill();
 
-        // Center spine plate
-        sctx.fillStyle = PALETTE.kaijuDorsalFinHex;
-        const spineH = Math.max(2, Math.floor(r * 0.9));
-        sctx.fillRect(segHalf - 1, segHalf - spineH, 3, spineH * 2);
+        // Shaded side scales
+        sctx.fillStyle = C.skinDark;
+        sctx.arc(segHalf, segHalf, r, Math.PI * 0.5, Math.PI * 1.5);
+        sctx.fill();
 
-        // Highlight
-        sctx.fillStyle = PALETTE.kaijuGreenLightHex;
-        sctx.fillRect(segHalf, segHalf - Math.floor(spineH / 2), 1, spineH);
+        // Center spine plate with glowing neon tip
+        const spineH = Math.max(3, Math.floor(r * 1.1));
+        sctx.fillStyle = C.spineBase;
+        sctx.fillRect(segHalf - 2, segHalf - spineH, 4, spineH * 2);
+
+        sctx.fillStyle = C.spineNeon;
+        sctx.fillRect(segHalf - 1, segHalf - Math.floor(spineH * 0.7), 2, Math.floor(spineH * 1.4));
+
+        sctx.fillStyle = C.spineHot;
+        sctx.fillRect(segHalf, segHalf - Math.floor(spineH * 0.4), 1, Math.floor(spineH * 0.8));
 
         scanvas.refresh();
       }

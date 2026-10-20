@@ -3,9 +3,10 @@ import { CardScreen } from './CardScreen.js';
 import { DeathScreen } from './DeathScreen.js';
 import { RecipeBook } from './RecipeBook.js';
 import { Minimap } from './Minimap.js';
+import { LayerInspector } from './LayerInspector.js';
 
 /**
- * UIManager.js - Tahap 4A-2 & 5A
+ * UIManager.js - Tahap 4A-2, 5A & 6A
  * Master Coordinator for all HTML/CSS UI overlays in Titanovore.
  * Mounted onto <div id="ui-root"> above the Phaser canvas.
  * Manages:
@@ -14,6 +15,7 @@ import { Minimap } from './Minimap.js';
  * - CardScreen (Level-up modal with clickable cards, hotkeys [1, 2, 3, R, S], double-click guards)
  * - DeathScreen (Run summary panel and clickable [R] revive button)
  * - RecipeBook (Synergy evolution recipes & progression modal [TAB])
+ * - LayerInspector (Godzilla mutation slots & anchor testing overlay [U])
  * - Clean lifecycle (no listener leaks on respawns or scene restart)
  */
 export class UIManager {
@@ -43,6 +45,7 @@ export class UIManager {
     this.recipeBook = new RecipeBook(this.root, () => {
       return this.getRecipeStatus ? this.getRecipeStatus() : [];
     });
+    this.layerInspector = scene ? new LayerInspector(this.root, scene) : null;
 
     // Connect HUD recipe button to RecipeBook
     this.hud.onToggleRecipe = () => this.toggleRecipeBook();
@@ -154,6 +157,23 @@ export class UIManager {
    */
   isRecipeBookOpen() {
     return this.recipeBook ? this.recipeBook.isOpen : false;
+  }
+
+  /**
+   * Toggles LayerInspector modal [U]
+   */
+  toggleLayerInspector() {
+    if (this.layerInspector) {
+      this.layerInspector.toggle();
+    }
+  }
+
+  /**
+   * Checks if layer inspector modal is open
+   * @returns {boolean}
+   */
+  isLayerInspectorOpen() {
+    return this.layerInspector ? this.layerInspector.isOpen : false;
   }
 
   /**
