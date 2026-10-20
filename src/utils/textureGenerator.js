@@ -677,7 +677,116 @@ export class TextureGenerator {
       ctx.fill();
       canvas.refresh();
     }
+
+    // 8. Mobile Artillery (12x8 px, facing Right, prominent fixed long barrel)
+    if (!scene.textures.exists('enemy_artillery')) {
+      const canvas = scene.textures.createCanvas('enemy_artillery', 12, 8);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Heavy Treads (Top & Bottom)
+      ctx.fillStyle = '#18181b';
+      ctx.fillRect(0, 0, 9, 2); // Top tread
+      ctx.fillRect(0, 6, 9, 2); // Bottom tread
+
+      // Tread track wheels
+      ctx.fillStyle = '#3f3f46';
+      ctx.fillRect(1, 0, 1, 2);
+      ctx.fillRect(4, 0, 1, 2);
+      ctx.fillRect(7, 0, 1, 2);
+      ctx.fillRect(1, 6, 1, 2);
+      ctx.fillRect(4, 6, 1, 2);
+      ctx.fillRect(7, 6, 1, 2);
+
+      // Armored Casemate Hull (Heavy Olive Steel)
+      ctx.fillStyle = '#283618';
+      ctx.fillRect(1, 2, 7, 4);
+
+      // Casemate roof & sloped back
+      ctx.fillStyle = '#606c38';
+      ctx.fillRect(1, 2, 6, 1);
+      ctx.fillStyle = '#1b2310';
+      ctx.fillRect(1, 5, 7, 1);
+
+      // Heavy Fixed Howitzer Barrel (Long protruding tube pointing Right)
+      ctx.fillStyle = '#1f2421';
+      ctx.fillRect(4, 3, 7, 2);
+      ctx.fillStyle = '#333d29';
+      ctx.fillRect(5, 3, 5, 1); // Barrel top highlight
+
+      // Muzzle Brake at tip
+      ctx.fillStyle = '#0f140d';
+      ctx.fillRect(11, 2, 1, 4);
+
+      // Targeting sensor / gunner optics
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(2, 3, 1, 1);
+
+      canvas.refresh();
+    }
+
+    // 9. Military Transport Truck (14x8 px, facing Right)
+    if (!scene.textures.exists('enemy_truck')) {
+      const canvas = scene.textures.createCanvas('enemy_truck', 14, 8);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+
+      // Wheels
+      ctx.fillStyle = '#18181b';
+      ctx.fillRect(2, 0, 2, 1);
+      ctx.fillRect(10, 0, 2, 1);
+      ctx.fillRect(2, 7, 2, 1);
+      ctx.fillRect(10, 7, 2, 1);
+
+      // Cargo Canopy Bed (Rear)
+      ctx.fillStyle = '#4a5320';
+      ctx.fillRect(0, 1, 8, 6);
+      ctx.fillStyle = '#5c6728';
+      ctx.fillRect(1, 1, 6, 1); // Canopy highlight
+      ctx.fillStyle = '#353b16';
+      ctx.fillRect(1, 6, 6, 1); // Canopy shadow
+
+      // Truck Cabin (Front)
+      ctx.fillStyle = '#283618';
+      ctx.fillRect(8, 1, 5, 6);
+
+      // Windshield
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(11, 2, 1, 4);
+
+      // Front bumper & grille
+      ctx.fillStyle = '#141a12';
+      ctx.fillRect(13, 2, 1, 4);
+
+      // Headlights
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(13, 1, 1, 1);
+      ctx.fillRect(13, 6, 1, 1);
+
+      canvas.refresh();
+    }
+
+    // 10. Airstrike Heavy Bomber Shadow (48x36 px)
+    if (!scene.textures.exists('airstrike_bomber_shadow')) {
+      const canvas = scene.textures.createCanvas('airstrike_bomber_shadow', 48, 36);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+
+      // Flying Wing Delta Stealth Silhouette
+      ctx.beginPath();
+      ctx.moveTo(48, 18); // Nose
+      ctx.lineTo(8, 0);   // Left wingtip
+      ctx.lineTo(16, 14); // Left trailing notch
+      ctx.lineTo(0, 18);  // Tail center
+      ctx.lineTo(16, 22); // Right trailing notch
+      ctx.lineTo(8, 36);  // Right wingtip
+      ctx.closePath();
+      ctx.fill();
+
+      canvas.refresh();
+    }
   }
+
 
   /**
    * Small utility particle / helper textures

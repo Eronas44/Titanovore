@@ -30,7 +30,9 @@ export const ALERT_CONFIG = {
     killSoldier: 0.50,
     killTank: 1.80,
     killHelicopter: 2.20,
-    killDrone: 0.50
+    killDrone: 0.50,
+    killArtillery: 1.80,
+    killTruck: 0.80
   },
 
   // Level-specific Spawn Tables and Limits
@@ -47,7 +49,8 @@ export const ALERT_CONFIG = {
         TANK: 0.0,
         SOLDIER: 0.0,
         HELICOPTER: 0.0,
-        DRONE: 0.0
+        DRONE: 0.0,
+        ARTILLERY: 0.0
       },
       typeLimits: {
         CITIZEN: 25,
@@ -56,7 +59,8 @@ export const ALERT_CONFIG = {
         TANK: 0,
         SOLDIER: 0,
         HELICOPTER: 0,
-        DRONE: 0
+        DRONE: 0,
+        ARTILLERY: 0
       }
     },
     2: {
@@ -70,7 +74,8 @@ export const ALERT_CONFIG = {
         TANK: 0.08, // Tank pertama muncul
         SOLDIER: 0.32,
         HELICOPTER: 0.0,
-        DRONE: 0.0
+        DRONE: 0.0,
+        ARTILLERY: 0.0
       },
       typeLimits: {
         CITIZEN: 15,
@@ -79,7 +84,8 @@ export const ALERT_CONFIG = {
         TANK: 3,
         SOLDIER: 35,
         HELICOPTER: 0,
-        DRONE: 0
+        DRONE: 0,
+        ARTILLERY: 0
       }
     },
     3: {
@@ -90,10 +96,11 @@ export const ALERT_CONFIG = {
         CITIZEN: 0.05,
         POLICE: 0.15,
         POLICE_CAR: 0.05,
-        TANK: 0.25,
-        SOLDIER: 0.42,
+        TANK: 0.22,
+        SOLDIER: 0.38,
         HELICOPTER: 0.08, // Helikopter pertama muncul
-        DRONE: 0.0
+        DRONE: 0.0,
+        ARTILLERY: 0.07 // Artileri mulai muncul di Siaga 3
       },
       typeLimits: {
         CITIZEN: 10,
@@ -102,7 +109,8 @@ export const ALERT_CONFIG = {
         TANK: 12,
         SOLDIER: 65,
         HELICOPTER: 4,
-        DRONE: 0
+        DRONE: 0,
+        ARTILLERY: 3
       }
     },
     4: {
@@ -113,10 +121,11 @@ export const ALERT_CONFIG = {
         CITIZEN: 0.02,
         POLICE: 0.08,
         POLICE_CAR: 0.03,
-        TANK: 0.30,
-        SOLDIER: 0.32,
+        TANK: 0.26,
+        SOLDIER: 0.28,
         HELICOPTER: 0.10,
-        DRONE: 0.15 // Drone kamikaze muncul
+        DRONE: 0.14,
+        ARTILLERY: 0.09
       },
       typeLimits: {
         CITIZEN: 6,
@@ -125,7 +134,8 @@ export const ALERT_CONFIG = {
         TANK: 20,
         SOLDIER: 80,
         HELICOPTER: 6,
-        DRONE: 20
+        DRONE: 20,
+        ARTILLERY: 5
       }
     },
     5: {
@@ -136,10 +146,11 @@ export const ALERT_CONFIG = {
         CITIZEN: 0.02,
         POLICE: 0.06,
         POLICE_CAR: 0.02,
-        TANK: 0.28,
-        SOLDIER: 0.32,
-        HELICOPTER: 0.12,
-        DRONE: 0.18
+        TANK: 0.24,
+        SOLDIER: 0.28,
+        HELICOPTER: 0.11,
+        DRONE: 0.16,
+        ARTILLERY: 0.11 // Batas maksimal sekitar 6 sekaligus
       },
       typeLimits: {
         CITIZEN: 6,
@@ -147,8 +158,9 @@ export const ALERT_CONFIG = {
         POLICE_CAR: 4,
         TANK: 28,
         SOLDIER: 95,
-        HELICOPTER: 8, // Batas maksimal helikopter
-        DRONE: 30 // Batas maksimal drone
+        HELICOPTER: 8,
+        DRONE: 30,
+        ARTILLERY: 6
       }
     }
   }

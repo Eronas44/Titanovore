@@ -1199,6 +1199,14 @@ export class BossManager {
     this.activeBoss = new Boss(this.scene, spawnPos.x, spawnPos.y, this.bossDefeatCount + 1);
     this.scene.boss = this.activeBoss;
 
+    // Clean cancellation of projectiles and events on boss spawn
+    if (this.scene.enemyManager && typeof this.scene.enemyManager.cancelAllArtilleryProjectiles === 'function') {
+      this.scene.enemyManager.cancelAllArtilleryProjectiles();
+    }
+    if (this.scene.eventSystem && typeof this.scene.eventSystem.stopCurrentEvent === 'function') {
+      this.scene.eventSystem.stopCurrentEvent(false);
+    }
+
     // Connect to HUD Boss Bar
     if (this.scene.uiManager && this.scene.uiManager.hud) {
       this.scene.uiManager.hud.showBossBar('MECH-TITAN', this.activeBoss.maxHp);

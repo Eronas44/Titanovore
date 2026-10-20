@@ -110,6 +110,13 @@ export class Hud {
               <div class="siaga-seg"></div>
             </div>
           </div>
+
+          <!-- Small Active Event Indicator under Siaga (Tahap 5B-2) -->
+          <div class="hud-event-indicator" id="hud-event-indicator" style="display: none;">
+            <span class="hud-event-icon">⚡</span>
+            <span class="hud-event-name" id="hud-event-name">KEJADIAN KHUSUS</span>
+            <span class="hud-event-timer" id="hud-event-timer">30s</span>
+          </div>
         </div>
 
         <!-- Top Center: Survival Timer & Kills -->
@@ -225,6 +232,11 @@ export class Hud {
     this.bossPhaseBadge = this.hudLayer.querySelector('#boss-phase-badge');
     this.bossHpNumbers = this.hudLayer.querySelector('#boss-hp-numbers');
     this.bossBarFill = this.hudLayer.querySelector('#boss-bar-fill');
+
+    // Special Event Indicator elements
+    this.eventIndicatorEl = this.hudLayer.querySelector('#hud-event-indicator');
+    this.eventNameEl = this.hudLayer.querySelector('#hud-event-name');
+    this.eventTimerEl = this.hudLayer.querySelector('#hud-event-timer');
 
     if (this.newCityBtn) {
       this.newCityBtn.addEventListener('click', (e) => {
@@ -414,6 +426,37 @@ export class Hud {
     } else {
       if (this.bossContainer && this.bossContainer.classList.contains('visible')) {
         this.bossContainer.classList.remove('visible');
+      }
+    }
+
+    // 9. Active Event Indicator Badge
+    if (state.eventData && state.eventData.activeEvent) {
+      if (this.eventIndicatorEl) {
+        this.eventIndicatorEl.style.display = 'inline-flex';
+        const eType = state.eventData.activeEvent;
+        let icon = '⚡';
+        let name = 'KEJADIAN KHUSUS';
+        if (eType === 'MILITARY_CONVOY') {
+          icon = '🚚';
+          name = 'KONVOI MILITER';
+          this.eventIndicatorEl.className = 'hud-event-indicator convoy';
+        } else if (eType === 'AIRSTRIKE') {
+          icon = '✈️';
+          name = 'SERANGAN UDARA';
+          this.eventIndicatorEl.className = 'hud-event-indicator airstrike';
+        } else if (eType === 'EVACUATION') {
+          icon = '🏃';
+          name = 'EVAKUASI WARGA';
+          this.eventIndicatorEl.className = 'hud-event-indicator evac';
+        }
+        const iconEl = this.eventIndicatorEl.querySelector('.hud-event-icon');
+        if (iconEl) iconEl.textContent = icon;
+        if (this.eventNameEl) this.eventNameEl.textContent = name;
+        if (this.eventTimerEl) this.eventTimerEl.textContent = `${state.eventData.eventTimer}s`;
+      }
+    } else {
+      if (this.eventIndicatorEl) {
+        this.eventIndicatorEl.style.display = 'none';
       }
     }
   }

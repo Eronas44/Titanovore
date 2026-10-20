@@ -226,6 +226,63 @@ export class Minimap {
       ctx.fillRect(bx - 1.5, by - 1.5, 3, 3);
     }
 
+    // 5c. Render Elite Enemies (Yellow Dots - Tahap 5B-2)
+    if (enemyMgr && enemyMgr.eliteCount > 0) {
+      for (let i = 0; i < enemyMgr.maxEnemies; i++) {
+        if (enemyMgr.active[i] && enemyMgr.isElite[i]) {
+          const ex = enemyMgr.x[i] * scaleX;
+          const ey = enemyMgr.y[i] * scaleY;
+          // Outer subtle aura
+          ctx.fillStyle = 'rgba(250, 204, 21, 0.45)';
+          ctx.beginPath();
+          ctx.arc(ex, ey, 4, 0, Math.PI * 2);
+          ctx.fill();
+          // Yellow core dot
+          ctx.fillStyle = '#facc15';
+          ctx.fillRect(ex - 1.5, ey - 1.5, 3, 3);
+        }
+      }
+    }
+
+    // 5d. Render Special Events Radar Markers (Tahap 5B-2)
+    const eventSys = this.scene.eventSystem;
+    if (eventSys && eventSys.activeEvent) {
+      const eType = eventSys.activeEvent;
+      if (eType === 'EVACUATION' && eventSys.evacX) {
+        const evX = eventSys.evacX * scaleX;
+        const evY = eventSys.evacY * scaleY;
+        // Pulsing green evacuation beacon
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.35)';
+        ctx.beginPath();
+        ctx.arc(evX, evY, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(evX, evY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(evX - 1, evY - 1, 2, 2);
+      } else if (eType === 'AIRSTRIKE' && eventSys.airstrikeLine) {
+        const l = eventSys.airstrikeLine;
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(l.x1 * scaleX, l.y1 * scaleY);
+        ctx.lineTo(l.x2 * scaleX, l.y2 * scaleY);
+        ctx.stroke();
+      } else if (eType === 'MILITARY_CONVOY' && eventSys.convoyIndices && eventSys.convoyIndices.length > 0) {
+        ctx.fillStyle = '#f97316';
+        for (let c = 0; c < eventSys.convoyIndices.length; c++) {
+          const idx = eventSys.convoyIndices[c];
+          if (enemyMgr.active[idx]) {
+            const cx = enemyMgr.x[idx] * scaleX;
+            const cy = enemyMgr.y[idx] * scaleY;
+            ctx.fillRect(cx - 2, cy - 2, 4, 4);
+          }
+        }
+      }
+    }
+
     // 6. Render Kaiju GPS Marker with Direction Heading
     const kaiju = this.scene.kaiju;
     if (kaiju) {

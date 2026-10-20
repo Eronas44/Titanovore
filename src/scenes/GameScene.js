@@ -26,6 +26,7 @@ import { RebuildSystem } from '../world/RebuildSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
 import { BossManager } from '../enemies/Boss.js';
 import { BOSS_CONFIG } from '../config/boss.js';
+import { EventSystem } from '../systems/EventSystem.js';
 
 /**
  * GameScene - Tahap 3B
@@ -163,7 +164,10 @@ export class GameScene extends Phaser.Scene {
     this.bossManager = new BossManager(this);
     this.boss = null;
 
-    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga, M: Evolution Cheat, T: Rebuild, Y: Save, N: Minimap, O: Boss, P: Boss 10% HP)
+    // 10c. Initialize Special Events System (Tahap 5B-2)
+    this.eventSystem = new EventSystem(this, this.enemyManager, this.alertSystem, this.cityGrid, this.navGrid);
+
+    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga, M: Evolution Cheat, T: Rebuild, Y: Save, N: Minimap, O: Boss, P: Boss 10% HP, G: Event, H: Elite, J: Artileri)
     this.setupDebugKeys();
   }
 
@@ -401,6 +405,39 @@ export class GameScene extends Phaser.Scene {
         }
       }
     });
+
+    // 18. [G] Key: (Temporary Debug - Tahap 5B-2) Trigger Next Special Event in rotation
+    this.input.keyboard.on('keydown-G', (event) => {
+      event.preventDefault();
+      if (this.eventSystem) {
+        const ev = this.eventSystem.triggerNextEvent(this.kaiju);
+        if (this.uiManager) {
+          this.uiManager.showEventBanner('DEBUG CHEAT [G]', `KEJADIAN DIPICU: ${ev}`, 2000);
+        }
+      }
+    });
+
+    // 19. [H] Key: (Temporary Debug - Tahap 5B-2) Spawn 1 Elite Enemy Near Kaiju
+    this.input.keyboard.on('keydown-H', (event) => {
+      event.preventDefault();
+      if (this.enemyManager) {
+        this.enemyManager.spawnDebugElite(this.kaiju);
+        if (this.uiManager) {
+          this.uiManager.showEventBanner('DEBUG CHEAT [H]', 'MUSUH ELIT DIMUNCULKAN!', 2000);
+        }
+      }
+    });
+
+    // 20. [J] Key: (Temporary Debug - Tahap 5B-2) Spawn 3 Artillery Units Near Kaiju
+    this.input.keyboard.on('keydown-J', (event) => {
+      event.preventDefault();
+      if (this.enemyManager) {
+        this.enemyManager.spawnDebugArtillery(this.kaiju, 3);
+        if (this.uiManager) {
+          this.uiManager.showEventBanner('DEBUG CHEAT [J]', '3 ARTILERI BERGERAK DIMUNCULKAN!', 2000);
+        }
+      }
+    });
   }
 
   /**
@@ -475,6 +512,9 @@ export class GameScene extends Phaser.Scene {
     if (this.bossManager) {
       this.bossManager.resetRunState(); // Reset boss on kaiju death/respawn
     }
+    if (this.eventSystem) {
+      this.eventSystem.reset();
+    }
     this.isCardSelecting = false;
 
     // 4. Reset Run Telemetry (City destruction stats remain accumulated)
@@ -538,6 +578,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.bossManager) {
       this.bossManager.resetRunState();
+    }
+    if (this.eventSystem) {
+      this.eventSystem.reset();
     }
     this.isCardSelecting = false;
 
@@ -624,9 +667,10 @@ export class GameScene extends Phaser.Scene {
     let f3Text = '';
     if (this.isExtendedHud) {
       const fps = Math.round(this.game.loop.actualFps);
-      const tc = this.enemyManager ? this.enemyManager.typeCounts : [0,0,0,0,0,0,0,0];
+      const tc = this.enemyManager ? this.enemyManager.typeCounts : [0,0,0,0,0,0,0,0,0,0,0];
       const activeTot = this.enemyManager ? this.enemyManager.activeCount : 0;
-      const p = this.profiling || { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0, tBoss: 0 };
+      const eliteTot = this.enemyManager ? this.enemyManager.eliteCount : 0;
+      const p = this.profiling || { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0, tBoss: 0, tEvent: 0 };
 
       const curD = this.districts ? this.districts.getCurrentDistrict() : null;
       const dName = curD ? curD.name : 'Downtown';
@@ -638,12 +682,17 @@ export class GameScene extends Phaser.Scene {
         ? `FASE ${curB.phase}${curB.isEnraged ? ' (ENRAGED)' : ''} | HP: ${Math.ceil(curB.hp)}/${curB.maxHp} | ATK: ${curB.currentAttack || 'IDLE'} | ${(p.tBoss || 0).toFixed(2)}ms`
         : (this.bossManager && this.bossManager.spawnState === 'warning' ? `MENDEKAT (${this.bossManager.warningTimer.toFixed(1)}s)` : 'TIDAK AKTIF');
 
+      const evTelemetry = this.eventSystem ? this.eventSystem.getTelemetry() : null;
+      const evStatus = evTelemetry && evTelemetry.activeEvent
+        ? `${evTelemetry.activeEvent} (${evTelemetry.eventTimer}s) | ${(p.tEvent || 0).toFixed(2)}ms`
+        : `IDLE (Cooldown: ${evTelemetry ? evTelemetry.cooldownTimer : 0}s)`;
+
       f3Text = `FPS: ${fps} | TOTAL KOTA: ${destructionPct}% | DISTRIK: ${dName.toUpperCase()} (${dPct}%)\n` +
-               `PROFILE (ms): Enemy: ${p.tEnemy.toFixed(2)} | Wpn: ${p.tWeapon.toFixed(2)} | Part: ${p.tParticle.toFixed(2)} | Chunk: ${p.tChunk.toFixed(2)} | Nav: ${p.tNav.toFixed(2)} | UI: ${p.tUI.toFixed(2)} | Boss: ${(p.tBoss || 0).toFixed(2)}\n` +
-               `ENTITIES: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} (TOT: ${activeTot})\n` +
+               `PROFILE (ms): Enemy: ${p.tEnemy.toFixed(2)} | Wpn: ${p.tWeapon.toFixed(2)} | Part: ${p.tParticle.toFixed(2)} | Chunk: ${p.tChunk.toFixed(2)} | Nav: ${p.tNav.toFixed(2)} | UI: ${p.tUI.toFixed(2)} | Boss: ${(p.tBoss || 0).toFixed(2)} | Event: ${(p.tEvent || 0).toFixed(2)}\n` +
+               `ENTITIES: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} ART:${tc[9] || 0} TRK:${tc[10] || 0} | ELIT:${eliteTot} (TOT: ${activeTot})\n` +
+               `EVENT: ${evStatus}\n` +
                `BOSS: ${bStatus}\n` +
-               `REBUILD: ${fastRebuildStr} | SAVE: ${this.saveSystem ? this.saveSystem.getLastSavedString() : 'N/A'}\n` +
-               `HOTKEYS: [O] Boss | [P] Boss 10% HP | [T] Rebuild | [Y] Save | [N] Radar | [Shift+R] Reset`;
+               `HOTKEYS: [G] Event | [H] Elite | [J] Artileri | [O] Boss | [P] Boss 10% | [T] Rebuild | [N] Radar`;
     }
 
     const curDistrict = this.districts ? this.districts.getCurrentDistrict() : null;
@@ -661,6 +710,8 @@ export class GameScene extends Phaser.Scene {
       phase: curBoss.phase,
       isEnraged: curBoss.isEnraged
     } : null;
+
+    const eventTelemetry = this.eventSystem ? this.eventSystem.getTelemetry() : null;
 
     this.uiManager.update({
       hp: curHp,
@@ -682,6 +733,7 @@ export class GameScene extends Phaser.Scene {
       weapons,
       passives,
       boss: bossData,
+      eventData: eventTelemetry,
       f3Visible: this.isExtendedHud,
       f3Text
     });
@@ -854,6 +906,13 @@ export class GameScene extends Phaser.Scene {
     }
     const tBoss = performance.now() - tBoss0;
 
+    // 6h. Update Special Events System (Tahap 5B-2)
+    const tEvent0 = performance.now();
+    if (this.eventSystem) {
+      this.eventSystem.update(dt, this.kaiju);
+    }
+    const tEvent = performance.now() - tEvent0;
+
     // 7. Update Particle Manager
     const tParticle0 = performance.now();
     this.particleManager.update(dt);
@@ -872,6 +931,7 @@ export class GameScene extends Phaser.Scene {
     this.profiling.tChunk = this.profiling.tChunk * (1 - alpha) + tChunk * alpha;
     this.profiling.tNav = this.profiling.tNav * (1 - alpha) + tNav * alpha;
     this.profiling.tBoss = (this.profiling.tBoss || 0) * (1 - alpha) + tBoss * alpha;
+    this.profiling.tEvent = (this.profiling.tEvent || 0) * (1 - alpha) + tEvent * alpha;
 
     const tUI0 = performance.now();
     this.updateHUD();

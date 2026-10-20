@@ -153,6 +153,91 @@ export const ENEMY_CONFIG = {
       explosionEnemyDamage: 25,
       maxActive: 30,
       xp: 20
+    },
+    ARTILLERY: {
+      id: 9,
+      name: 'Artileri Bergerak',
+      width: 12,
+      height: 8,
+      hp: 30,
+      speed: 36, // Slow armored mobile artillery
+      minRange: 200, // Distance keeping
+      maxRange: 260,
+      retreatDistance: 190, // Retreats backwards if Kaiju gets closer than this
+      shootIntervalMin: 3.6, // Staggered interval ~4.0s
+      shootIntervalMax: 4.4,
+      telegraphDuration: 1.2, // Red circle shrinking for 1.2s at impact point
+      shellSpeed: 240, // Visual parabolic trajectory
+      explosionRadius: 26, // Medium area explosion
+      shellDamageKaiju: 14, // Medium damage to Kaiju
+      shellBuildingDamage: 2.8, // Demolishes city buildings in impact radius
+      shellEnemyDamage: 25, // Collateral damage to nearby enemies
+      maxActive: 6,
+      xp: 110
+    },
+    TRUCK: {
+      id: 10,
+      name: 'Truk Militer',
+      width: 14,
+      height: 8,
+      hp: 20,
+      speed: 55,
+      soldierPayload: 4, // Soldiers emerging when destroyed
+      xp: 60
     }
+  },
+
+  // Elite Enemy Modifiers (Tahap 5B-2)
+  elite: {
+    scale: 1.4,
+    hpMultiplier: 4.0,
+    damageMultiplier: 1.5,
+    xpMultiplier: 8.0,
+    maxActive: 3,
+    // Spawn chance per Siaga level
+    spawnChances: {
+      1: 0.0,
+      2: 0.08,
+      3: 0.14,
+      4: 0.20,
+      5: 0.28
+    },
+    // Skills configuration
+    skills: {
+      SHIELD: {
+        id: 1,
+        name: 'Perisai',
+        label: 'PERISAI',
+        shieldHpRatio: 0.60 // Absorbs frontal damage up to 60% of base max HP
+      },
+      HEALER: {
+        id: 2,
+        name: 'Pemulih',
+        label: 'PEMULIH',
+        interval: 3.5,
+        radius: 90,
+        healRatio: 0.22 // Heals 22% max HP to nearby units
+      },
+      SPAWNER: {
+        id: 3,
+        name: 'Pemanggil',
+        label: 'PEMANGGIL',
+        interval: 4.5,
+        countMin: 3,
+        countMax: 4
+      },
+      BOMBER: {
+        id: 4,
+        name: 'Peledak',
+        label: 'PELEDAK',
+        explosionRadius: 55,
+        damageKaiju: 20,
+        damageBuilding: 3.5,
+        damageEnemy: 60
+      }
+    },
+    cardDropChance: 0.25,
+    cardDropCooldownSeconds: 180 // Max once per 3 minutes
   }
 };
+

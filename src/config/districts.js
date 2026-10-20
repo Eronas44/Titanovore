@@ -21,7 +21,8 @@ export const DISTRICTS_CONFIG = {
         TANK: 1.0,
         SOLDIER: 1.3,
         HELICOPTER: 2.2,
-        DRONE: 2.5
+        DRONE: 2.5,
+        ARTILLERY: 1.0
       }
     },
     {
@@ -39,7 +40,8 @@ export const DISTRICTS_CONFIG = {
         TANK: 1.0,
         SOLDIER: 1.0,
         HELICOPTER: 1.0,
-        DRONE: 0.9
+        DRONE: 0.9,
+        ARTILLERY: 0.8
       }
     },
     {
@@ -57,7 +59,8 @@ export const DISTRICTS_CONFIG = {
         TANK: 0.4,
         SOLDIER: 0.7,
         HELICOPTER: 0.6,
-        DRONE: 0.5
+        DRONE: 0.5,
+        ARTILLERY: 0.4
       }
     },
     {
@@ -75,7 +78,8 @@ export const DISTRICTS_CONFIG = {
         TANK: 2.5,
         SOLDIER: 1.9,
         HELICOPTER: 1.3,
-        DRONE: 1.2
+        DRONE: 1.2,
+        ARTILLERY: 2.5 // Significantly increased in Industrial district
       }
     },
     {
@@ -84,7 +88,7 @@ export const DISTRICTS_CONFIG = {
       subtitle: 'Kawasan Hijau & Bantaran Air',
       color: '#06b6d4', // Teal Cyan
       hexColor: 0x06b6d4,
-      minimapColor: 'rgba(6, 182, 212, 0.20)',
+      minimapColor: 'rgba(0, 182, 212, 0.20)',
       // Civilians relaxing, open airspace for helicopters
       spawnWeightMultipliers: {
         CITIZEN: 1.5,
@@ -93,7 +97,8 @@ export const DISTRICTS_CONFIG = {
         TANK: 0.5,
         SOLDIER: 0.9,
         HELICOPTER: 1.2,
-        DRONE: 1.0
+        DRONE: 1.0,
+        ARTILLERY: 0.5
       }
     },
     {
@@ -111,7 +116,8 @@ export const DISTRICTS_CONFIG = {
         TANK: 0.3,
         SOLDIER: 0.5,
         HELICOPTER: 0.4,
-        DRONE: 0.3
+        DRONE: 0.3,
+        ARTILLERY: 0.3
       }
     }
   ],

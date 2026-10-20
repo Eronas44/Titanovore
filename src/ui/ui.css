@@ -1737,6 +1737,58 @@
   color: #f1f5f9;
 }
 
+/* Special Events Indicator (Tahap 5B-2) */
+.hud-event-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 3px 8px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fbbf24;
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.2);
+  animation: hudEventPulse 1.4s ease-in-out infinite alternate;
+}
+
+.hud-event-indicator.convoy {
+  border-color: rgba(249, 115, 22, 0.5);
+  color: #f97316;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.25);
+}
+
+.hud-event-indicator.airstrike {
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.3);
+}
+
+.hud-event-indicator.evac {
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+
+.hud-event-icon {
+  font-size: 11px;
+}
+
+.hud-event-timer {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+@keyframes hudEventPulse {
+  0% { transform: scale(0.98); opacity: 0.88; }
+  100% { transform: scale(1.02); opacity: 1.0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;
@@ -1744,4 +1796,5 @@
     transition-duration: 0.01ms !important;
   }
 }
+
 
