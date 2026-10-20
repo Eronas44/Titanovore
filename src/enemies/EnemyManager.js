@@ -12,7 +12,8 @@ export const ENEMY_TYPES = {
   TANK: 4,
   SOLDIER: 5,
   HELICOPTER: 6,
-  DRONE: 7
+  DRONE: 7,
+  BOSS: 8
 };
 
 /**
@@ -75,8 +76,9 @@ export class EnemyManager {
     }
     this.activeCount = 0;
 
-    // Counts per type for O(1) telemetry and spawn limiting
-    this.typeCounts = new Uint16Array(8);
+    // Counts per type for O(1) telemetry and spawn limiting (0..8)
+    this.typeCounts = new Uint16Array(9);
+    this.bossIndex = -1;
     this.lastUpdateTimeMs = 0;
 
     // 2. Structure of Arrays for Enemy Projectiles
@@ -314,6 +316,49 @@ export class EnemyManager {
   }
 
   /**
+   * Registers active Boss into EnemyManager SoA pool for weapon targeting and damage queries
+   * @param {Object} boss 
+   * @returns {number} assigned slot index
+   */
+  registerBoss(boss) {
+    if (this.bossIndex >= 0) return this.bossIndex;
+    if (this.freeIndices.length === 0) return -1;
+    const idx = this.freeIndices.pop();
+    this.bossIndex = idx;
+
+    this.generation[idx] = (this.generation[idx] + 1) >>> 0;
+    this.active[idx] = 1;
+    this.type[idx] = ENEMY_TYPES.BOSS;
+    this.x[idx] = boss.x;
+    this.y[idx] = boss.y;
+    this.vx[idx] = 0;
+    this.vy[idx] = 0;
+    this.rotation[idx] = boss.rotation || 0;
+    this.hp[idx] = boss.hp;
+    this.maxHp[idx] = boss.maxHp;
+    this.isAir[idx] = 0;
+    this.activeCount++;
+    this.typeCounts[ENEMY_TYPES.BOSS]++;
+
+    if (this.sprites[idx]) {
+      this.sprites[idx].setVisible(false);
+      this.sprites[idx].setActive(false);
+    }
+    return idx;
+  }
+
+  /**
+   * Unregisters Boss slot when defeated or cleaned up
+   */
+  unregisterBoss() {
+    if (this.bossIndex >= 0) {
+      const idx = this.bossIndex;
+      this.bossIndex = -1;
+      this.despawnEnemy(idx);
+    }
+  }
+
+  /**
    * Recycles an enemy slot cleanly back into the free list.
    */
   despawnEnemy(idx) {
@@ -507,6 +552,12 @@ export class EnemyManager {
    */
   damageEnemy(idx, amount, canHitAir = false) {
     if (!this.active[idx]) return false;
+    if (this.type[idx] === ENEMY_TYPES.BOSS) {
+      if (this.scene.boss && this.scene.boss.isAlive) {
+        return this.scene.boss.takeDamage(amount, canHitAir);
+      }
+      return false;
+    }
     if (this.isAir[idx] === 1 && !canHitAir) return false;
 
     this.hp[idx] -= amount;
@@ -1260,8 +1311,8 @@ export class EnemyManager {
       if (this.isAir[i] === 1) return; // Airborne units cannot be trampled!
 
       const eType = this.type[i];
-      // Tanks and Soldiers are too sturdy for trampling - must be destroyed with weapons!
-      if (eType === ENEMY_TYPES.TANK || eType === ENEMY_TYPES.SOLDIER) return;
+      // Tanks, Soldiers, and Boss are too sturdy for trampling - must be destroyed with weapons!
+      if (eType === ENEMY_TYPES.TANK || eType === ENEMY_TYPES.SOLDIER || eType === ENEMY_TYPES.BOSS) return;
 
       const ex = this.x[i];
       const ey = this.y[i];
@@ -1326,6 +1377,7 @@ export class EnemyManager {
     }
     this.activeCount = 0;
     this.typeCounts.fill(0);
+    this.bossIndex = -1;
 
     for (let i = 0; i < this.maxBullets; i++) {
       this.bulletActive[i] = 0;

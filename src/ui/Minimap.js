@@ -199,6 +199,33 @@ export class Minimap {
       }
     }
 
+    // 5b. Render Mech-Titan Boss Radar Marker
+    const boss = this.scene.boss || (this.scene.bossManager && this.scene.bossManager.activeBoss);
+    if (boss && boss.isAlive) {
+      const bx = boss.x * scaleX;
+      const by = boss.y * scaleY;
+
+      // Pulsing red danger glow
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.45)';
+      ctx.beginPath();
+      ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Boss Diamond
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.moveTo(bx, by - 6);
+      ctx.lineTo(bx + 6, by);
+      ctx.lineTo(bx, by + 6);
+      ctx.lineTo(bx - 6, by);
+      ctx.closePath();
+      ctx.fill();
+
+      // White inner core
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(bx - 1.5, by - 1.5, 3, 3);
+    }
+
     // 6. Render Kaiju GPS Marker with Direction Heading
     const kaiju = this.scene.kaiju;
     if (kaiju) {

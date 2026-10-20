@@ -329,6 +329,14 @@ export class CardSystem {
         this.citySprinterSpeedBoost = effect.speedBoost || 0.20;
         this.citySprinterDuration = effect.duration || 2.5;
         this.citySprinterHeal = effect.healAmount || 0;
+      } else if (card.passiveKey === 'reactorCore') {
+        if (this.weaponSystem) {
+          this.weaponSystem.damageMultiplier *= (effect.allDamageMult || 1.20);
+          this.weaponSystem.cooldownMultiplier *= (effect.cooldownMult || 0.85);
+        }
+        if (this.kaiju && typeof this.kaiju.setReactorCore === 'function') {
+          this.kaiju.setReactorCore(true);
+        }
       }
     }
   }

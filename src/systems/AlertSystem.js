@@ -127,7 +127,13 @@ export class AlertSystem {
     // Inactivity decay
     if (this.noActionTimer >= ALERT_CONFIG.decayDelaySeconds) {
       const decay = ALERT_CONFIG.decayRatePerSecond * dt;
-      const minFloor = this.levelFloorProtectionTimer > 0 ? this.protectedFloor : 0.0;
+      let minFloor = this.levelFloorProtectionTimer > 0 ? this.protectedFloor : 0.0;
+
+      // Lock Siaga at level 3 minimum while Boss is alive
+      if (this.scene && this.scene.bossManager && this.scene.bossManager.isBossActive()) {
+        minFloor = Math.max(minFloor, 40.0);
+      }
+
       this.alert = Math.max(minFloor, this.alert - decay);
       this.currentLevel = this.getLevelForAlert(this.alert);
     }

@@ -1461,6 +1461,135 @@
   color: #ffffff;
 }
 
+/* ==========================================================================
+   Tahap 5B-1: Mech-Titan Colossal Boss HP Bar
+   ========================================================================== */
+.hud-boss-bar-container {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-12px);
+  width: clamp(340px, 48vw, 620px);
+  background: rgba(11, 15, 25, 0.94);
+  border: 1.5px solid rgba(239, 68, 68, 0.55);
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.35), 0 4px 20px rgba(0, 0, 0, 0.75);
+  border-radius: var(--radius-md);
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 45;
+}
+
+.hud-boss-bar-container.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.boss-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.boss-name-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.boss-hazard-icon {
+  font-size: 13px;
+  color: #f97316;
+  filter: drop-shadow(0 0 6px #ea580c);
+}
+
+.boss-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #fca5a5;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+}
+
+.boss-phase-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: rgba(239, 68, 68, 0.22);
+  border: 1px solid #ef4444;
+  color: #fee2e2;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+
+.boss-phase-badge.enraged {
+  background: rgba(249, 115, 22, 0.35);
+  border-color: #f97316;
+  color: #fff7ed;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.5);
+  animation: pulse-enraged 0.8s infinite alternate;
+}
+
+@keyframes pulse-enraged {
+  from { opacity: 0.85; transform: scale(1); }
+  to { opacity: 1.0; transform: scale(1.05); }
+}
+
+.boss-hp-numbers {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.boss-bar-track {
+  position: relative;
+  width: 100%;
+  height: 9px;
+  background: rgba(15, 23, 42, 0.85);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.boss-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #dc2626, #f97316);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+  border-radius: 3px;
+  transition: width 0.12s ease-out;
+}
+
+/* Phase Threshold Markers at 66.6% and 33.3% */
+.boss-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fbbf24;
+  box-shadow: 0 0 6px #f59e0b;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.boss-marker.marker-66 {
+  left: 66.66%;
+}
+
+.boss-marker.marker-33 {
+  left: 33.33%;
+}
+
 /* Tactical Minimap Radar */
 .minimap-wrapper {
   position: absolute;

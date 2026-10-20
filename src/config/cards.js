@@ -604,6 +604,22 @@ export const CARD_CONFIG = {
         { speedBoost: 0.45, duration: 3.3 },
         { speedBoost: 0.60, duration: 4.0 }
       ]
+    },
+    {
+      id: 'inti_reaktor',
+      type: 'passive',
+      passiveKey: 'reactorCore',
+      name: 'Inti Reaktor',
+      icon: 'icon_reactor',
+      rarity: 'LEGENDARY',
+      role: 'boss_relic',
+      maxLevel: 1,
+      descriptions: [
+        'INTI MECH-TITAN: +20% Damage semua senjata dan -15% Cooldown tembak secara permanen!'
+      ],
+      effects: [
+        { allDamageMult: 1.20, cooldownMult: 0.85 }
+      ]
     }
   ]
 };

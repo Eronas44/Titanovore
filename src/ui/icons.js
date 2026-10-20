@@ -376,6 +376,15 @@ export const ICONS = {
       <line x1="4" y1="6" x2="1" y2="5" stroke="#ffd700" stroke-width="2" />
       <line x1="4" y1="14" x2="1" y2="15" stroke="#ffd700" stroke-width="2" />
     </svg>
+  `,
+
+  reactor: `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3.5" fill="#f97316" stroke="#fbbf24" stroke-width="1.5" />
+      <ellipse cx="12" cy="12" rx="9" ry="3.5" stroke="#38bdf8" stroke-width="1.5" />
+      <ellipse cx="12" cy="12" rx="9" ry="3.5" transform="rotate(60 12 12)" stroke="#38bdf8" stroke-width="1.5" />
+      <ellipse cx="12" cy="12" rx="9" ry="3.5" transform="rotate(120 12 12)" stroke="#38bdf8" stroke-width="1.5" />
+    </svg>
   `
 };
 
@@ -417,6 +426,7 @@ export function getIconSvg(key) {
   if (normalized.includes('scaveng') || normalized.includes('jarah') || normalized.includes('penjarah')) return ICONS.scavenger;
   if (normalized.includes('reach') || normalized.includes('jangkau')) return ICONS.extended_reach;
   if (normalized.includes('sprint') || normalized.includes('lari') || normalized.includes('pelari')) return ICONS.city_sprinter;
+  if (normalized.includes('reactor') || normalized.includes('reaktor') || normalized.includes('inti')) return ICONS.reactor;
 
   if (normalized.includes('iron') || normalized.includes('baja')) return ICONS.iron_skin;
   if (normalized.includes('regen')) return ICONS.regeneration;

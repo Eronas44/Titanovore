@@ -144,6 +144,23 @@ export class Hud {
         </div>
       </div>
 
+      <!-- Broad Boss HP Bar overlay across top center -->
+      <div class="hud-boss-bar-container" id="hud-boss-bar-container">
+        <div class="boss-bar-header">
+          <div class="boss-name-group">
+            <span class="boss-hazard-icon">⚡</span>
+            <span class="boss-title" id="boss-title">MECH-TITAN</span>
+            <span class="boss-phase-badge" id="boss-phase-badge">FASE 1</span>
+          </div>
+          <span class="boss-hp-numbers" id="boss-hp-numbers">1200 / 1200</span>
+        </div>
+        <div class="boss-bar-track">
+          <div class="boss-bar-fill" id="boss-bar-fill"></div>
+          <div class="boss-marker marker-66" title="Ambang Fase 2 (66%)"></div>
+          <div class="boss-marker marker-33" title="Ambang Fase 3 (33%)"></div>
+        </div>
+      </div>
+
       <!-- Bottom Bar: Weapons Inventory, Passives, Wide XP Progression -->
       <div class="hud-bottom-bar">
         <!-- Bottom Left: Weapons & Passives Inventory -->
@@ -201,6 +218,13 @@ export class Hud {
     this.districtPctEl = this.hudLayer.querySelector('#hud-district-pct');
     this.saveStatusEl = this.hudLayer.querySelector('#hud-save-status');
     this.newCityBtn = this.hudLayer.querySelector('#hud-new-city-btn');
+
+    // Boss Bar elements
+    this.bossContainer = this.hudLayer.querySelector('#hud-boss-bar-container');
+    this.bossTitle = this.hudLayer.querySelector('#boss-title');
+    this.bossPhaseBadge = this.hudLayer.querySelector('#boss-phase-badge');
+    this.bossHpNumbers = this.hudLayer.querySelector('#boss-hp-numbers');
+    this.bossBarFill = this.hudLayer.querySelector('#boss-bar-fill');
 
     if (this.newCityBtn) {
       this.newCityBtn.addEventListener('click', (e) => {
@@ -364,6 +388,34 @@ export class Hud {
         this.f3Panel.classList.remove('visible');
       }
     }
+
+    // 8. Boss HP Bar
+    if (state.boss && state.boss.active) {
+      if (this.bossContainer && !this.bossContainer.classList.contains('visible')) {
+        this.bossContainer.classList.add('visible');
+      }
+      if (this.bossTitle) this.bossTitle.textContent = state.boss.name || 'MECH-TITAN';
+      if (this.bossPhaseBadge) {
+        const pStr = state.boss.isEnraged ? 'FASE 3 · MODE MARAH' : `FASE ${state.boss.phase || 1}`;
+        this.bossPhaseBadge.textContent = pStr;
+        if (state.boss.isEnraged) {
+          this.bossPhaseBadge.classList.add('enraged');
+        } else {
+          this.bossPhaseBadge.classList.remove('enraged');
+        }
+      }
+      if (this.bossHpNumbers) {
+        this.bossHpNumbers.textContent = `${Math.ceil(state.boss.hp)} / ${state.boss.maxHp}`;
+      }
+      if (this.bossBarFill) {
+        const ratio = Math.max(0, Math.min(1.0, state.boss.hp / state.boss.maxHp));
+        this.bossBarFill.style.width = `${(ratio * 100).toFixed(1)}%`;
+      }
+    } else {
+      if (this.bossContainer && this.bossContainer.classList.contains('visible')) {
+        this.bossContainer.classList.remove('visible');
+      }
+    }
   }
 
   /**
@@ -498,6 +550,23 @@ export class Hud {
    */
   showEvolutionBanner(name) {
     this.showEventBanner('EVOLUSI SENJATA!', `SINERGI "${name.toUpperCase()}" TELAH AKTIF!`, 2200);
+  }
+
+  /**
+   * Shows dedicated Boss HP bar
+   */
+  showBossBar(name = 'MECH-TITAN', maxHp = 1200) {
+    if (this.bossContainer) this.bossContainer.classList.add('visible');
+    if (this.bossTitle) this.bossTitle.textContent = name;
+    if (this.bossHpNumbers) this.bossHpNumbers.textContent = `${maxHp} / ${maxHp}`;
+    if (this.bossBarFill) this.bossBarFill.style.width = '100%';
+  }
+
+  /**
+   * Hides Boss HP bar
+   */
+  hideBossBar() {
+    if (this.bossContainer) this.bossContainer.classList.remove('visible');
   }
 
   /**

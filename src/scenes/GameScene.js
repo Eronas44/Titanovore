@@ -24,6 +24,8 @@ import { Districts } from '../world/Districts.js';
 import { DISTRICTS_CONFIG } from '../config/districts.js';
 import { RebuildSystem } from '../world/RebuildSystem.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
+import { BossManager } from '../enemies/Boss.js';
+import { BOSS_CONFIG } from '../config/boss.js';
 
 /**
  * GameScene - Tahap 3B
@@ -155,9 +157,13 @@ export class GameScene extends Phaser.Scene {
     }, this);
     this.isExtendedHud = false;
     this.evolutionDebugIndex = 0;
-    this.profiling = { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0 };
+    this.profiling = { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0, tBoss: 0 };
 
-    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga, M: Evolution Cheat, T: Rebuild, Y: Save, N: Minimap)
+    // 10b. Initialize Mech-Titan Boss Director (Tahap 5B-1)
+    this.bossManager = new BossManager(this);
+    this.boss = null;
+
+    // 11. Debug Hotkeys Setup (F: Grow, R: Respawn, 1-4: Teleport, F3: HUD, F6: AirKill, F7/F8: Siaga, M: Evolution Cheat, T: Rebuild, Y: Save, N: Minimap, O: Boss, P: Boss 10% HP)
     this.setupDebugKeys();
   }
 
@@ -371,6 +377,30 @@ export class GameScene extends Phaser.Scene {
         }
       }
     });
+
+    // 16. [O] Key: (Temporary Debug) Spawn Mech-Titan Boss immediately
+    this.input.keyboard.on('keydown-O', (event) => {
+      event.preventDefault();
+      if (this.bossManager) {
+        this.bossManager.spawnBossNow(this.kaiju);
+        if (this.uiManager) {
+          this.uiManager.showEventBanner('DEBUG CHEAT [O]', 'MECH-TITAN DIMUNCULKAN LANGSUNG!', 2000);
+        }
+      }
+    });
+
+    // 17. [P] Key: (Temporary Debug) Set Boss HP to 10% for phase 3 and death testing
+    this.input.keyboard.on('keydown-P', (event) => {
+      event.preventDefault();
+      const b = this.boss || (this.bossManager && this.bossManager.activeBoss);
+      if (b && b.isAlive) {
+        b.hp = Math.round(b.maxHp * 0.10);
+        b.takeDamage(1, true); // Trigger phase updates
+        if (this.uiManager) {
+          this.uiManager.showEventBanner('DEBUG CHEAT [P]', 'HP MECH-TITAN DITURUNKAN KE 10%!', 2000);
+        }
+      }
+    });
   }
 
   /**
@@ -442,6 +472,9 @@ export class GameScene extends Phaser.Scene {
     if (this.districts) {
       this.districts.resetRunState(); // Reset per-run milestone claim flags
     }
+    if (this.bossManager) {
+      this.bossManager.resetRunState(); // Reset boss on kaiju death/respawn
+    }
     this.isCardSelecting = false;
 
     // 4. Reset Run Telemetry (City destruction stats remain accumulated)
@@ -502,6 +535,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.cardSystem) {
       this.cardSystem.reset();
+    }
+    if (this.bossManager) {
+      this.bossManager.resetRunState();
     }
     this.isCardSelecting = false;
 
@@ -590,18 +626,24 @@ export class GameScene extends Phaser.Scene {
       const fps = Math.round(this.game.loop.actualFps);
       const tc = this.enemyManager ? this.enemyManager.typeCounts : [0,0,0,0,0,0,0,0];
       const activeTot = this.enemyManager ? this.enemyManager.activeCount : 0;
-      const p = this.profiling || { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0 };
+      const p = this.profiling || { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0, tBoss: 0 };
 
       const curD = this.districts ? this.districts.getCurrentDistrict() : null;
       const dName = curD ? curD.name : 'Downtown';
       const dPct = curD ? this.districts.getDestructionPercentage(curD.id).toFixed(1) : '0.0';
       const fastRebuildStr = (this.rebuildSystem && this.rebuildSystem.isFastDebugMode) ? 'CEPAT (10s)' : 'NORMAL (6m)';
 
+      const curB = this.boss || (this.bossManager && this.bossManager.activeBoss);
+      const bStatus = curB && curB.isAlive
+        ? `FASE ${curB.phase}${curB.isEnraged ? ' (ENRAGED)' : ''} | HP: ${Math.ceil(curB.hp)}/${curB.maxHp} | ATK: ${curB.currentAttack || 'IDLE'} | ${(p.tBoss || 0).toFixed(2)}ms`
+        : (this.bossManager && this.bossManager.spawnState === 'warning' ? `MENDEKAT (${this.bossManager.warningTimer.toFixed(1)}s)` : 'TIDAK AKTIF');
+
       f3Text = `FPS: ${fps} | TOTAL KOTA: ${destructionPct}% | DISTRIK: ${dName.toUpperCase()} (${dPct}%)\n` +
-               `PROFILE (ms): Enemy: ${p.tEnemy.toFixed(2)} | Wpn: ${p.tWeapon.toFixed(2)} | Part: ${p.tParticle.toFixed(2)} | Chunk: ${p.tChunk.toFixed(2)} | Nav: ${p.tNav.toFixed(2)} | UI: ${p.tUI.toFixed(2)}\n` +
+               `PROFILE (ms): Enemy: ${p.tEnemy.toFixed(2)} | Wpn: ${p.tWeapon.toFixed(2)} | Part: ${p.tParticle.toFixed(2)} | Chunk: ${p.tChunk.toFixed(2)} | Nav: ${p.tNav.toFixed(2)} | UI: ${p.tUI.toFixed(2)} | Boss: ${(p.tBoss || 0).toFixed(2)}\n` +
                `ENTITIES: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} (TOT: ${activeTot})\n` +
+               `BOSS: ${bStatus}\n` +
                `REBUILD: ${fastRebuildStr} | SAVE: ${this.saveSystem ? this.saveSystem.getLastSavedString() : 'N/A'}\n` +
-               `HOTKEYS: [T] Rebuild Speed | [Y] Save & Reload | [N] Radar Minimap | [Shift+R] Kota Baru`;
+               `HOTKEYS: [O] Boss | [P] Boss 10% HP | [T] Rebuild | [Y] Save | [N] Radar | [Shift+R] Reset`;
     }
 
     const curDistrict = this.districts ? this.districts.getCurrentDistrict() : null;
@@ -609,6 +651,16 @@ export class GameScene extends Phaser.Scene {
     const districtColor = curDistrict ? curDistrict.color : '#38bdf8';
     const districtDestructionPct = curDistrict ? this.districts.getDestructionPercentage(curDistrict.id).toFixed(1) : '0.0';
     const lastSavedStr = this.saveSystem ? `Disimpan: ${this.saveSystem.getLastSavedString()}` : 'Tersimpan';
+
+    const curBoss = this.boss || (this.bossManager && this.bossManager.activeBoss);
+    const bossData = curBoss && curBoss.isAlive ? {
+      active: true,
+      name: 'MECH-TITAN',
+      hp: curBoss.hp,
+      maxHp: curBoss.maxHp,
+      phase: curBoss.phase,
+      isEnraged: curBoss.isEnraged
+    } : null;
 
     this.uiManager.update({
       hp: curHp,
@@ -629,6 +681,7 @@ export class GameScene extends Phaser.Scene {
       targetXp,
       weapons,
       passives,
+      boss: bossData,
       f3Visible: this.isExtendedHud,
       f3Text
     });
@@ -794,6 +847,13 @@ export class GameScene extends Phaser.Scene {
       this.saveSystem.update(dt);
     }
 
+    // 6g. Update Mech-Titan Boss (Tahap 5B-1)
+    const tBoss0 = performance.now();
+    if (this.bossManager) {
+      this.bossManager.update(dt, this.kaiju);
+    }
+    const tBoss = performance.now() - tBoss0;
+
     // 7. Update Particle Manager
     const tParticle0 = performance.now();
     this.particleManager.update(dt);
@@ -811,6 +871,7 @@ export class GameScene extends Phaser.Scene {
     this.profiling.tParticle = this.profiling.tParticle * (1 - alpha) + tParticle * alpha;
     this.profiling.tChunk = this.profiling.tChunk * (1 - alpha) + tChunk * alpha;
     this.profiling.tNav = this.profiling.tNav * (1 - alpha) + tNav * alpha;
+    this.profiling.tBoss = (this.profiling.tBoss || 0) * (1 - alpha) + tBoss * alpha;
 
     const tUI0 = performance.now();
     this.updateHUD();

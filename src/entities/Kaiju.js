@@ -53,6 +53,10 @@ export class Kaiju {
     this.electricFrame = 0;
     this.electricTimer = 0;
 
+    // Inti Reaktor (Reactor Core boss passive)
+    this.hasReactorCore = false;
+    this.reactorCoreGraphics = null;
+
     // Setup GameObjects
     this.setupDisplayObjects();
     this.setupTail();
@@ -406,6 +410,29 @@ export class Kaiju {
     }
     this.currentShield = 0;
     this.maxShield = 0;
+
+    if (this.reactorCoreGraphics) {
+      this.container.remove(this.reactorCoreGraphics);
+      this.reactorCoreGraphics.destroy();
+      this.reactorCoreGraphics = null;
+    }
+    this.hasReactorCore = false;
+  }
+
+  /**
+   * Equips or unequips pulsating Reactor Core relic
+   * @param {boolean} active 
+   */
+  setReactorCore(active = true) {
+    this.hasReactorCore = active;
+    if (active && !this.reactorCoreGraphics) {
+      this.reactorCoreGraphics = this.scene.add.graphics();
+      this.container.add(this.reactorCoreGraphics);
+    } else if (!active && this.reactorCoreGraphics) {
+      this.container.remove(this.reactorCoreGraphics);
+      this.reactorCoreGraphics.destroy();
+      this.reactorCoreGraphics = null;
+    }
   }
 
   /**
@@ -497,6 +524,18 @@ export class Kaiju {
       if (this.energyShieldSprite && this.currentShield > 0) {
         this.energyShieldSprite.rotation += dt * 0.8;
       }
+    }
+
+    // Inti Reaktor pulsating core visual
+    if (this.hasReactorCore && this.reactorCoreGraphics) {
+      this.reactorCoreGraphics.clear();
+      const pulse = 0.8 + Math.sin(time * 0.007) * 0.25;
+      this.reactorCoreGraphics.fillStyle(0x38bdf8, pulse * 0.45);
+      this.reactorCoreGraphics.fillCircle(0, 0, 14 * pulse);
+      this.reactorCoreGraphics.fillStyle(0xf97316, 0.9);
+      this.reactorCoreGraphics.fillCircle(0, 0, 7);
+      this.reactorCoreGraphics.fillStyle(0xffffff, 1.0);
+      this.reactorCoreGraphics.fillCircle(0, 0, 3.5);
     }
 
     // Sync container position
