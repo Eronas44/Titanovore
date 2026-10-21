@@ -448,6 +448,9 @@ export class EnemyManager {
 
     this.active[idx] = 0;
     this.type[idx] = ENEMY_TYPES.INACTIVE;
+    if (oldType === ENEMY_TYPES.BOSS) {
+      this.bossIndex = -1;
+    }
     this.isAir[idx] = 0;
     this.sprites[idx].setVisible(false);
     this.sprites[idx].setActive(false);
@@ -862,6 +865,8 @@ export class EnemyManager {
     // 5. Update Active Enemies
     for (let i = 0; i < this.maxEnemies; i++) {
       if (!this.active[i]) continue;
+      // Boss entity is updated and rendered by Boss / BossManager, not standard enemy AI
+      if (this.type[i] === ENEMY_TYPES.BOSS) continue;
 
       const ex = this.x[i];
       const ey = this.y[i];

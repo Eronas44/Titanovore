@@ -158,6 +158,7 @@ export class GameScene extends Phaser.Scene {
     }, this);
     this.isExtendedHud = false;
     this.evolutionDebugIndex = 0;
+    this.arsenalDebugIndex = 0;
     this.profiling = { tEnemy: 0, tWeapon: 0, tParticle: 0, tChunk: 0, tNav: 0, tUI: 0, tBoss: 0 };
 
     // 10b. Initialize Mech-Titan Boss Director (Tahap 5B-1)
@@ -446,6 +447,101 @@ export class GameScene extends Phaser.Scene {
         this.uiManager.toggleLayerInspector();
       }
     });
+
+    // 22. [B] Key: (Tahap 6B Debug) Equip all weapons at Level 5 simultaneously (cycles through 3 presets of 6 weapons)
+    this.input.keyboard.on('keydown-B', (event) => {
+      event.preventDefault();
+      if (!this.weaponSystem) return;
+
+      const presets = [
+        // Preset 0: Frontline Heavy Artillery
+        {
+          name: 'Frontline Fire & Artillery',
+          weapons: [
+            { id: 'claw', level: 5 },
+            { id: 'back_cannon', level: 5 },
+            { id: 'back_rockets', level: 5 },
+            { id: 'fire_breath', level: 5 },
+            { id: 'laser_eyes', level: 5 },
+            { id: 'quake_stomp', level: 5 }
+          ]
+        },
+        // Preset 1: Bio-Electric Spiked Fortress
+        {
+          name: 'Bio-Electric Spiked Titan',
+          weapons: [
+            { id: 'claw', level: 5 },
+            { id: 'electric_skin', level: 5 },
+            { id: 'spiked_tail', level: 5 },
+            { id: 'body_spikes', level: 5 },
+            { id: 'back_cannon', level: 5 },
+            { id: 'laser_eyes', level: 5 }
+          ]
+        },
+        // Preset 2: Synergy Evolution Showcase
+        {
+          name: 'Evolution Showcase (Plasma & Artillery)',
+          weapons: [
+            { id: 'claw', level: 5 },
+            { id: 'quake_stomp', level: 5 },
+            { id: 'spiked_tail', level: 5 },
+            { id: 'body_spikes', level: 5 }
+          ],
+          evolutions: [
+            { id: 'plasma_storm', evoData: EVOLUTION_CONFIG.evolutions.find(e => e.id === 'plasma_storm') },
+            { id: 'heavy_artillery', evoData: EVOLUTION_CONFIG.evolutions.find(e => e.id === 'heavy_artillery') }
+          ]
+        }
+      ];
+
+      const preset = presets[this.arsenalDebugIndex % presets.length];
+      this.arsenalDebugIndex++;
+
+      // Clear existing weapons cleanly
+      this.weaponSystem.equippedWeapons.clear();
+      if (this.kaiju) {
+        this.kaiju.clearAllMutations();
+      }
+
+      // Equip standard Lv 5 weapons
+      for (const w of preset.weapons) {
+        this.weaponSystem.equipWeapon(w.id, w.level);
+      }
+
+      // Equip evolutions if present in preset
+      if (preset.evolutions) {
+        for (const evo of preset.evolutions) {
+          if (evo.evoData) {
+            this.weaponSystem.equipEvolvedWeapon(evo.id, evo.evoData);
+            if (this.kaiju) {
+              const slot = evo.evoData.slot || 'body';
+              this.kaiju.setEvolutionVisual(evo.id, slot);
+            }
+          }
+        }
+      }
+
+      if (this.uiManager) {
+        this.uiManager.showEventBanner('ARSENAL LEVEL 5 [B]', `${preset.name.toUpperCase()} (6 SLOT AKTIF)`, 2400);
+      }
+    });
+
+    // 23. [V] Key: (Tahap 6B Debug) Toggle effect visual quality (tinggi -> sedang -> rendah)
+    this.input.keyboard.on('keydown-V', (event) => {
+      event.preventDefault();
+      if (!this.particleManager) return;
+
+      const qualities = ['tinggi', 'sedang', 'rendah'];
+      const curQ = this.particleManager.currentQuality || 'tinggi';
+      const curIdx = qualities.indexOf(curQ);
+      const nextQ = qualities[(curIdx + 1) % qualities.length];
+
+      this.particleManager.setQuality(nextQ);
+
+      if (this.uiManager) {
+        this.uiManager.showEventBanner('KUALITAS EFEK [V]', `TINGKAT EFEK: ${nextQ.toUpperCase()}`, 1800);
+      }
+    });
   }
 
   /**
@@ -695,12 +791,15 @@ export class GameScene extends Phaser.Scene {
         ? `${evTelemetry.activeEvent} (${evTelemetry.eventTimer}s) | ${(p.tEvent || 0).toFixed(2)}ms`
         : `IDLE (Cooldown: ${evTelemetry ? evTelemetry.cooldownTimer : 0}s)`;
 
+      const qName = (this.particleManager?.currentQuality || 'tinggi').toUpperCase();
+      const lightPoolCount = this.particleManager?.lightPoolManager?.activePools?.length || 0;
+
       f3Text = `FPS: ${fps} | TOTAL KOTA: ${destructionPct}% | DISTRIK: ${dName.toUpperCase()} (${dPct}%)\n` +
+               `EFEK: ${qName} (LightPools: ${lightPoolCount}) | KAIJU HP: ${curHp}/${maxHp} (Scale: ${this.kaiju.currentScale.toFixed(1)}x)\n` +
                `PROFILE (ms): Enemy: ${p.tEnemy.toFixed(2)} | Wpn: ${p.tWeapon.toFixed(2)} | Part: ${p.tParticle.toFixed(2)} | Chunk: ${p.tChunk.toFixed(2)} | Nav: ${p.tNav.toFixed(2)} | UI: ${p.tUI.toFixed(2)} | Boss: ${(p.tBoss || 0).toFixed(2)} | Event: ${(p.tEvent || 0).toFixed(2)}\n` +
                `ENTITIES: C:${tc[1]} P:${tc[2]} T:${tc[4]} S:${tc[5]} H:${tc[6]} D:${tc[7]} ART:${tc[9] || 0} TRK:${tc[10] || 0} | ELIT:${eliteTot} (TOT: ${activeTot})\n` +
-               `EVENT: ${evStatus}\n` +
-               `BOSS: ${bStatus}\n` +
-               `HOTKEYS: [G] Event | [H] Elite | [J] Artileri | [O] Boss | [P] Boss 10% | [T] Rebuild | [N] Radar`;
+               `EVENT: ${evStatus} | BOSS: ${bStatus}\n` +
+               `HOTKEYS: [B] Arsenal Lv5 | [V] Kualitas Efek | [U] Inspector | [G] Event | [H] Elite | [J] Artileri | [O] Boss | [P] Boss 10% | [T] Rebuild | [N] Radar`;
     }
 
     const curDistrict = this.districts ? this.districts.getCurrentDistrict() : null;

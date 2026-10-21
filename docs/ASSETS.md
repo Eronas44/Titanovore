@@ -119,10 +119,39 @@ Setiap senjata/mutasi visual menempel pada slot anatomi Kaiju:
 | `enemy_commando` | enemies | `assets/sprites/enemies/enemy_commando.png` | 12 x 12 | 1 | (0.5, 0.5) | 1.000 | Prajurit Komando Elit |
 | `boss_mech_titan` | boss | `assets/sprites/boss/boss_mech_titan.png` | 72 x 72 | 1 | (0.5, 0.5) | 1.000 | Robot Pertahanan Mech-Titan |
 | `fx_laser_glow` | fx | `assets/sprites/fx/fx_laser_glow.png` | 32 x 32 | 1 | (0.5, 0.5) | 1.000 | Pijar Laser Okular |
+| `fx_glow_light_64` | fx | `assets/sprites/fx/fx_glow_light_64.png` | 64 x 64 | 1 | (0.5, 0.5) | 1.000 | Radial Additive Ground Light (64px) |
+| `fx_glow_light_32` | fx | `assets/sprites/fx/fx_glow_light_32.png` | 32 x 32 | 1 | (0.5, 0.5) | 1.000 | Radial Additive Ground Light (32px) |
+| `fx_muzzle_flash` | fx | `assets/sprites/fx/fx_muzzle_flash.png` | 24 x 16 | 1 | (0.5, 0.5) | 1.000 | Kilatan Moncong Turret/Roket |
+| `fx_shockwave_ring` | fx | `assets/sprites/fx/fx_shockwave_ring.png` | 64 x 64 | 1 | (0.5, 0.5) | 1.000 | Cincin Kejut Ledakan & Injakan |
+| `fx_smoke_puff` | fx | `assets/sprites/fx/fx_smoke_puff.png` | 16 x 16 | 1 | (0.5, 0.5) | 1.000 | Kepulan Asap Roket & Kerusakan HP Rendah |
 
 ---
 
-## 6. Laporan Ukuran & Performa
+## 6. Efek Senjata Bercahaya & Sistem Kualitas (Tahap 6B)
+
+1. **Additive Blend Light Pools**:
+   - Seluruh kolam cahaya senjata (ledakan roket, semburan napas api, laser okular, injakan getar, dan petir) menggunakan `Phaser.BlendModes.ADD` pada satu kedalaman tetap (depth 11.5) dengan pre-allocated pool (`LightPoolManager`), sehingga **tanpa fullscreen shader / bloom filter yang membebani GPU**.
+   - Kolam cahaya memudar halus dan langsung didaur ulang ke pool (zero GC).
+2. **Keterbacaan Medan Pertempuran (Readability)**:
+   - Glow dibatasi kecerahan dan radiusnya agar tidak menutupi musuh maupun peluru musuh. Proyektil dan retikel peringatan musuh tetap kontras dengan garis tepi gelap.
+3. **Reaksi Kerusakan & Animasi Tubuh Kaiju**:
+   - **Kerusakan HP Rendah (< 30%)**: Muncul celah magma merah menyala berdenyut di torso kaiju dan kepulan asap tipis berkala.
+   - **Hit Reaction**: Kedip merah (`0xff3333`) saat terkena serangan musuh.
+   - **Turret Recoil & Muzzle Flash**: Laras turret meriam punggung mundur 5px saat menembak dan memunculkan kilatan moncong bercahaya biru, lalu kembali ke posisi awal.
+   - **Bobbing Langkah**: Layer tubuh bergerak halus sinkron dengan langkah kaki saat berjalan.
+   - **Efek Fusi Evolusi**: Saat senjata berevolusi, semburan percikan partikel ungu/biru, kolam cahaya fusi, dan getaran layar mikro terpicu.
+4. **Tingkatan Kualitas Efek**:
+   - `tinggi` (default desktop): 100% partikel, 40 active light pools, efek smoke trail penuh.
+   - `sedang`: 70% partikel, 24 active light pools, glow alpha sedikit dikurangi.
+   - `rendah`: 40% partikel, 12 active light pools, mematikan smoke trail ringan (optimal untuk perangkat mobile/low-end).
+5. **Tombol Debug Tambahan**:
+   - **[B]**: Memberi semua senjata pada Lv 5 sekaligus (berputar antara 3 set: Frontline Heavy Artillery, Bio-Electric Spiked Fortress, dan Synergy Evolution Showcase).
+   - **[V]**: Menukar kualitas efek antara `tinggi` -> `sedang` -> `rendah` -> `tinggi` dengan notifikasi banner di layar.
+   - *Cara menghapus tombol debug nanti*: Cukup hapus listener `keydown-B` dan `keydown-V` di method `setupDebugKeys()` pada [`src/scenes/GameScene.js`](../src/scenes/GameScene.js).
+
+---
+
+## 7. Laporan Ukuran & Performa
 - **Ukuran Total Aset Gambar Saat Ini di Disk**: ~841 bytes (Target < 5.0 MB terpenuhi dengan sangat baik).
 - **Alokasi Memori Tekstur (VRAM)**: Terkelola bersih dalam Phaser Texture Manager. Pengecekan `textures.exists` mencegah duplikasi atau kebocoran memori saat pergantian scene maupun saat bangkit kembali berulang kali.
-- **FPS Target**: Tetap terkunci di **58-60 FPS** pada pertempuran penuh Siaga 5.
+- **FPS Target**: Tetap stabil di kisaran **58-60 FPS** pada pertempuran penuh Siaga 5 dengan 6 senjata aktif Level 5 dan 2 senjata evolusi.

@@ -20,6 +20,10 @@ export class PRNG {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 
+  random() {
+    return this.next();
+  }
+
   range(min, max) {
     return min + this.next() * (max - min);
   }

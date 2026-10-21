@@ -466,16 +466,20 @@ export class Boss {
   // =========================================================================
   renderTelegraph(kaiju) {
     this.telegraphGraphics.clear();
+    if (this.state !== 'telegraphing') return;
     const progress = 1.0 - (this.stateTimer / (this.telegraphDuration || 1.0));
 
     switch (this.currentAttack) {
       case 'stomp': {
         const r = BOSS_CONFIG.stomp.radius;
-        // Outer pulsing red circle
-        this.telegraphGraphics.lineStyle(2, 0xef4444, 0.85);
+        // Outer pulsing red warning ring
+        this.telegraphGraphics.lineStyle(1.5, 0xef4444, 0.75);
         this.telegraphGraphics.strokeCircle(this.x, this.y, r);
-        // Expanding inner fill representing countdown
-        this.telegraphGraphics.fillStyle(0xef4444, 0.25);
+        // Expanding thin warning ring countdown
+        this.telegraphGraphics.lineStyle(2, 0xf97316, 0.9);
+        this.telegraphGraphics.strokeCircle(this.x, this.y, Math.max(3, r * progress));
+        // Very faint fill (0.05) so Mech-Titan and ground terrain remain completely visible!
+        this.telegraphGraphics.fillStyle(0xef4444, 0.05);
         this.telegraphGraphics.fillCircle(this.x, this.y, r * progress);
         break;
       }
@@ -972,6 +976,39 @@ export class Boss {
   // =========================================================================
   // RENDERING COMPOSITE MECH-TITAN
   // =========================================================================
+  drawRotatedRect(g, localX, localY, w, h, fillColor, fillAlpha = 1.0, strokeColor = null, strokeWidth = 1) {
+    const cos = Math.cos(this.rotation);
+    const sin = Math.sin(this.rotation);
+    const halfW = w / 2;
+    const halfH = h / 2;
+
+    const corners = [
+      { x: localX - halfW, y: localY - halfH },
+      { x: localX + halfW, y: localY - halfH },
+      { x: localX + halfW, y: localY + halfH },
+      { x: localX - halfW, y: localY + halfH }
+    ];
+
+    g.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const c = corners[i];
+      const wx = this.x + c.x * cos - c.y * sin;
+      const wy = this.y + c.x * sin + c.y * cos;
+      if (i === 0) g.moveTo(wx, wy);
+      else g.lineTo(wx, wy);
+    }
+    g.closePath();
+
+    if (fillColor !== null) {
+      g.fillStyle(fillColor, fillAlpha);
+      g.fillPath();
+    }
+    if (strokeColor !== null) {
+      g.lineStyle(strokeWidth, strokeColor, 1.0);
+      g.strokePath();
+    }
+  }
+
   render() {
     this.shadowGraphics.clear();
     this.bodyGraphics.clear();
@@ -982,73 +1019,64 @@ export class Boss {
     this.shadowGraphics.fillStyle(0x020617, 0.45);
     this.shadowGraphics.fillEllipse(this.x, this.y + 6, 60, 42);
 
-    // 2. Alternating Mech Feet / Treads
+    // 2. Alternating Mech Feet / Treads (Rotated alongside body)
     const angle = this.rotation;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    const perpCos = Math.cos(angle + Math.PI / 2);
-    const perpSin = Math.sin(angle + Math.PI / 2);
-
-    const stepOffset = (this.walkAnimStep || 0) * 8;
-    const footW = 12;
+    const stepOffset = (this.walkAnimStep || 0) * 6;
+    const footW = 14;
     const footH = 22;
 
-    // Left Foot
-    const lx = this.x - perpCos * 18 + cos * stepOffset;
-    const ly = this.y - perpSin * 18 + sin * stepOffset;
-    this.bodyGraphics.fillStyle(0x334155, 1.0);
-    this.bodyGraphics.fillRoundedRect(lx - footW / 2, ly - footH / 2, footW, footH, 3);
+    // Left Foot Tread
+    this.drawRotatedRect(this.bodyGraphics, stepOffset, -20, footH, footW, 0x334155, 1.0, 0x1e293b, 1.5);
+    this.drawRotatedRect(this.bodyGraphics, stepOffset, -20, footH * 0.7, footW * 0.5, 0x0f172a, 1.0);
 
-    // Right Foot
-    const rx = this.x + perpCos * 18 - cos * stepOffset;
-    const ry = this.y + perpSin * 18 - sin * stepOffset;
-    this.bodyGraphics.fillStyle(0x334155, 1.0);
-    this.bodyGraphics.fillRoundedRect(rx - footW / 2, ry - footH / 2, footW, footH, 3);
+    // Right Foot Tread
+    this.drawRotatedRect(this.bodyGraphics, -stepOffset, 20, footH, footW, 0x334155, 1.0, 0x1e293b, 1.5);
+    this.drawRotatedRect(this.bodyGraphics, -stepOffset, 20, footH * 0.7, footW * 0.5, 0x0f172a, 1.0);
 
-    // 3. Main Steel Chassis
+    // 3. Main Steel Chassis (Rotated polygon with armor plates)
     const flash = this.damageFlashTimer > 0;
     const chassisColor = flash ? 0xffffff : (this.isEnraged ? 0x27202b : 0x1e293b);
     const borderColor = flash ? 0xffffff : 0x475569;
 
-    this.bodyGraphics.lineStyle(2, borderColor, 1.0);
-    this.bodyGraphics.fillStyle(chassisColor, 1.0);
-    this.bodyGraphics.fillRoundedRect(this.x - 20, this.y - 18, 40, 36, 4);
-    this.bodyGraphics.strokeRoundedRect(this.x - 20, this.y - 18, 40, 36, 4);
+    this.drawRotatedRect(this.bodyGraphics, 0, 0, 38, 34, chassisColor, 1.0, borderColor, 2);
+    this.drawRotatedRect(this.bodyGraphics, 2, 0, 22, 24, 0x0f172a, 0.6, 0x475569, 1);
 
-    // Hazard Stripes & Reactor Core on Chest
+    // Hazard Stripes & Glowing Reactor Core on Chest
     const coreColor = this.isEnraged ? 0xf97316 : 0xef4444;
-    this.bodyGraphics.fillStyle(coreColor, 0.85);
-    this.bodyGraphics.fillRect(this.x - 6, this.y - 4, 12, 8);
-    this.bodyGraphics.fillStyle(0xfbbf24, 1.0);
-    this.bodyGraphics.fillRect(this.x - 3, this.y - 2, 6, 4);
+    this.drawRotatedRect(this.bodyGraphics, 1, 0, 10, 10, coreColor, 0.9, 0xfbbf24, 1.5);
+    this.drawRotatedRect(this.bodyGraphics, 1, 0, 4, 4, 0xffffff, 1.0);
 
     // 4. Arms
     // Left Arm: Heavy Hydraulic Hammer
-    const hx = this.x - perpCos * 24;
-    const hy = this.y - perpSin * 24;
-    this.bodyGraphics.fillStyle(0x475569, 1.0);
-    this.bodyGraphics.fillRect(hx - 5, hy - 8, 10, 16);
-    this.bodyGraphics.fillStyle(0xea580c, 1.0);
-    this.bodyGraphics.fillRect(hx - 8, hy + 4, 16, 8); // Hammer head
+    // Arm strut
+    this.drawRotatedRect(this.bodyGraphics, 0, -23, 14, 8, 0x475569, 1.0, 0x334155, 1);
+    // Orange hammer head block
+    this.drawRotatedRect(this.bodyGraphics, 11, -23, 12, 18, 0xea580c, 1.0, 0xc2410c, 1.5);
+    // Hardened strike face
+    this.drawRotatedRect(this.bodyGraphics, 16, -23, 3, 14, 0xf1f5f9, 1.0);
 
     // Right Arm: Quad-Barrel Heavy Cannon
-    const cx = this.x + perpCos * 24;
-    const cy = this.y + perpSin * 24;
-    this.bodyGraphics.fillStyle(0x334155, 1.0);
-    this.bodyGraphics.fillRect(cx - 5, cy - 8, 10, 16);
-    this.bodyGraphics.fillStyle(0x0f172a, 1.0);
-    this.bodyGraphics.fillRect(cx - 3, cy - 14, 6, 8); // Cannon barrels
+    // Arm housing
+    this.drawRotatedRect(this.bodyGraphics, 0, 23, 14, 10, 0x334155, 1.0, 0x1e293b, 1);
+    // Cannon Barrels extending forward
+    this.drawRotatedRect(this.bodyGraphics, 15, 20.5, 16, 3, 0x0f172a, 1.0, 0x475569, 1);
+    this.drawRotatedRect(this.bodyGraphics, 15, 25.5, 16, 3, 0x0f172a, 1.0, 0x475569, 1);
 
-    // 5. Sensor Visor / Head
+    // 5. Sensor Visor / Head Turret
     const headX = this.x + cos * 14;
     const headY = this.y + sin * 14;
     this.bodyGraphics.fillStyle(0x0f172a, 1.0);
     this.bodyGraphics.fillCircle(headX, headY, 7);
-    // Glowing Red Monocular Visor
+    this.bodyGraphics.lineStyle(1.5, 0x475569, 1.0);
+    this.bodyGraphics.strokeCircle(headX, headY, 7);
+
+    // Glowing Red Monocular Visor Eye
     this.bodyGraphics.fillStyle(0xef4444, 1.0);
-    this.bodyGraphics.fillCircle(headX + cos * 2, headY + sin * 2, 4);
+    this.bodyGraphics.fillCircle(headX + cos * 2.5, headY + sin * 2.5, 3.5);
     this.bodyGraphics.fillStyle(0xffffff, 1.0);
-    this.bodyGraphics.fillCircle(headX + cos * 2, headY + sin * 2, 1.5);
+    this.bodyGraphics.fillCircle(headX + cos * 3, headY + sin * 3, 1.5);
 
     // Enrage Sparks
     if (this.isEnraged && Math.random() < 0.25 && this.scene.particleManager) {
@@ -1061,10 +1089,26 @@ export class Boss {
   // =========================================================================
   destroy() {
     this.isAlive = false;
-    if (this.shadowGraphics) this.shadowGraphics.destroy();
-    if (this.telegraphGraphics) this.telegraphGraphics.destroy();
-    if (this.bodyGraphics) this.bodyGraphics.destroy();
-    if (this.attackGraphics) this.attackGraphics.destroy();
+    if (this.shadowGraphics) {
+      this.shadowGraphics.clear();
+      this.shadowGraphics.destroy();
+      this.shadowGraphics = null;
+    }
+    if (this.telegraphGraphics) {
+      this.telegraphGraphics.clear();
+      this.telegraphGraphics.destroy();
+      this.telegraphGraphics = null;
+    }
+    if (this.bodyGraphics) {
+      this.bodyGraphics.clear();
+      this.bodyGraphics.destroy();
+      this.bodyGraphics = null;
+    }
+    if (this.attackGraphics) {
+      this.attackGraphics.clear();
+      this.attackGraphics.destroy();
+      this.attackGraphics = null;
+    }
   }
 }
 
@@ -1191,6 +1235,12 @@ export class BossManager {
    */
   spawnBossNow(kaiju) {
     this.spawnState = 'active';
+
+    // Pastikan bos lama dihancurkan bersih jika ada (mencegah tumpukan graphics)
+    if (this.activeBoss) {
+      this.activeBoss.destroy();
+      this.activeBoss = null;
+    }
 
     const kx = kaiju ? kaiju.x : this.scene.cityGrid.worldWidth / 2;
     const ky = kaiju ? kaiju.y : this.scene.cityGrid.worldHeight / 2;

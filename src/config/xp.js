@@ -14,16 +14,16 @@ export const XP_CONFIG = {
     CITIZEN: 1,
     POLICE: 2,
     POLICE_CAR: 3,
-    SOLDIER: 4,
-    TANK: 15,
-    HELICOPTER: 20,
+    SOLDIER: 2, // Dituned dari 4 agar drop prajurit tidak berlebihan
+    TANK: 6, // Dituned dari 15 agar tank tidak langsung memberi instan-level
+    HELICOPTER: 8, // Dituned dari 20
     DRONE: 2
   },
 
   // Direct XP (No crystals, directly added to XP bar)
   directXp: {
-    cellDestroyed: 0.15,
-    buildingCollapse: 3.0
+    cellDestroyed: 0.02, // Dituned dari 0.15 agar jalan kaki di gedung tidak loncat level instan
+    buildingCollapse: 1.0 // Dituned dari 3.0
   },
 
   // Magnet Tuning
@@ -34,10 +34,9 @@ export const XP_CONFIG = {
     pickupDistance: 16 // Distance to Kaiju center for collection
   },
 
-  // Level Curve (Level 2 reachable in ~20s normal play: ~25 XP)
-  // Formula: level 1 -> 25 XP, then exponential scaling
-  baseXpForLevel2: 25,
-  levelScalingExponent: 1.45,
+  // Level Curve (Level 2 tercapai di ~20s: 38 XP; lalu melambat ~1 level tiap 30-45s)
+  baseXpForLevel2: 38,
+  levelScalingExponent: 1.65,
 
   /**
    * Calculates XP required to advance from current level to next level
@@ -45,7 +44,7 @@ export const XP_CONFIG = {
    * @returns {number}
    */
   getXpRequiredForLevel(level) {
-    if (level <= 1) return 25;
-    return Math.round(25 * Math.pow(level, 1.45));
+    if (level <= 1) return 38;
+    return Math.round(38 * Math.pow(level, 1.65));
   }
 };

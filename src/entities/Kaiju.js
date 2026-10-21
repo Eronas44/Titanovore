@@ -40,6 +40,13 @@ export class Kaiju {
     this.attackLunge = 0;
     this.eyeSparkTimer = 0;
 
+    // Tahap 6B: Turret recoil, muzzle flash, & low-HP damage reactions
+    this.turretRecoil = 0;
+    this.muzzleFlashTimer = 0;
+    this.muzzleFlashSprite = null;
+    this.lowHpGraphics = null;
+    this.lowHpSmokeTimer = 0;
+
     // Slot Layer Architecture
     // Supported slots: 'body', 'back_slot', 'skin_overlay', 'head_slot', 'tail_slot'
     this.layers = new Map();
@@ -114,6 +121,26 @@ export class Kaiju {
     // 3. Main Body Container
     this.container = this.scene.add.container(this.x, this.y);
     this.container.setDepth(15); // Above ground, shadows, and crowd
+
+    // 4. Low-HP Magma Damage Fissures Graphics (Depth 15.5 inside container)
+    this.lowHpGraphics = this.scene.add.graphics();
+    this.container.add(this.lowHpGraphics);
+
+    // 5. Turret Muzzle Flash Sprite (Depth 19: above turret)
+    if (this.scene.textures.exists('fx_muzzle_flash')) {
+      this.muzzleFlashSprite = this.scene.add.sprite(0, 0, 'fx_muzzle_flash');
+      this.muzzleFlashSprite.setDepth(19);
+      this.muzzleFlashSprite.setBlendMode(Phaser.BlendModes.ADD);
+      this.muzzleFlashSprite.setVisible(false);
+      this.container.add(this.muzzleFlashSprite);
+    }
+
+    // 6. Ocular Halo & Occasional Eyelid Blink (Depth 16 inside container)
+    this.eyeGraphics = this.scene.add.graphics();
+    this.container.add(this.eyeGraphics);
+    this.blinkTimer = 3.5;
+    this.isBlinking = false;
+    this.blinkDuration = 0;
   }
 
   /**
@@ -181,7 +208,7 @@ export class Kaiju {
    * @param {string} slotName - One of ['body', 'back_slot', 'skin_overlay', 'head_slot', 'tail_slot']
    * @param {string} layerKey - Phaser texture key
    */
-  addLayer(slotName, layerKey) {
+  addLayer(slotName, layerKey, animate = false) {
     if (!this.config || !this.config.slots || !this.config.slots.includes(slotName)) {
       console.warn(`[Kaiju] Invalid slot: ${slotName}. Allowed slots:`, this.config ? this.config.slots : []);
       return null;
@@ -226,6 +253,27 @@ export class Kaiju {
       this.container.add(sprite);
     }
 
+    // Transisi pemasangan layer baru: animasi tumbuh (scale 0.2 -> 1.0) & kilatan tint
+    if (animate || (slotName !== 'body' && this.scene && this.scene.tweens)) {
+      sprite.setScale(0.2 * scaleVal);
+      sprite.setTintFill(0xffffff);
+      this.scene.tweens.add({
+        targets: sprite,
+        scaleX: scaleVal,
+        scaleY: scaleVal,
+        duration: 450,
+        ease: 'Back.easeOut'
+      });
+      this.scene.time.delayedCall(160, () => {
+        if (sprite && sprite.active) {
+          sprite.clearTint();
+        }
+      });
+      if (this.scene.particleManager) {
+        this.scene.particleManager.emitSparks(this.x + anchorX, this.y + anchorY, 0xfde047, 8, 50);
+      }
+    }
+
     const layerEntry = {
       sprite,
       key: layerKey,
@@ -237,6 +285,28 @@ export class Kaiju {
 
     this.layers.set(slotName, layerEntry);
     return sprite;
+  }
+
+  /**
+   * Triggers turret recoil and muzzle flash
+   * @param {number} color - Hex tint
+   */
+  triggerMuzzleFlash(color = 0x38bdf8) {
+    this.turretRecoil = 5.0;
+    const backEntry = this.layers.get('back_slot');
+    if (backEntry && backEntry.sprite) {
+      backEntry.sprite.setTint(color);
+      this.scene.time.delayedCall(70, () => {
+        if (backEntry && backEntry.sprite && backEntry.sprite.active) {
+          backEntry.sprite.clearTint();
+        }
+      });
+    }
+    if (this.muzzleFlashSprite) {
+      this.muzzleFlashSprite.setTint(color);
+      this.muzzleFlashSprite.setVisible(true);
+      this.muzzleFlashTimer = 0.08;
+    }
   }
 
   /**
@@ -318,8 +388,8 @@ export class Kaiju {
       return;
     }
 
-    // Attach as layer in slot
-    const sprite = this.addLayer(slot, texKey);
+    // Attach as layer in slot with mount animation
+    const sprite = this.addLayer(slot, texKey, true);
     if (sprite) {
       this.mutationSprites.set(weaponId, sprite);
     }
@@ -357,8 +427,18 @@ export class Kaiju {
       return;
     }
 
+    // Fusion FX: dramatic spark burst, ground light pool, and camera micro-shake
+    if (this.scene.particleManager) {
+      this.scene.particleManager.emitSparks(this.x, this.y, 0xa855f7, 24, 90);
+      this.scene.particleManager.emitSparks(this.x, this.y, 0x38bdf8, 20, 80);
+      this.scene.particleManager.spawnLightPool(this.x, this.y, 70, 0xa855f7, 0.8, 0.7);
+    }
+    if (this.scene.cameras && this.scene.cameras.main) {
+      this.scene.cameras.main.shake(150, 0.005);
+    }
+
     this.removeMutation(evolutionId);
-    const sprite = this.addLayer(slot, texKey);
+    const sprite = this.addLayer(slot, texKey, true);
     if (sprite) {
       this.mutationSprites.set(evolutionId, sprite);
     }
@@ -590,6 +670,41 @@ export class Kaiju {
       }
     }
 
+    // 1b. Occasional Eye Blink & Subtle Additive Glow
+    this.blinkTimer -= dt;
+    if (this.blinkTimer <= 0) {
+      if (!this.isBlinking) {
+        this.isBlinking = true;
+        this.blinkDuration = 0.11; // 110ms blink
+      } else {
+        this.blinkDuration -= dt;
+        if (this.blinkDuration <= 0) {
+          this.isBlinking = false;
+          this.blinkTimer = 3.5 + Math.random() * 2.5; // Next blink in 3.5-6s
+        }
+      }
+    }
+
+    if (this.eyeGraphics) {
+      this.eyeGraphics.clear();
+      const eyeX = 25.5 * this.displayScale;
+      const eyeTopY = -5.2 * this.displayScale;
+      const eyeBottomY = 5.2 * this.displayScale;
+
+      if (this.isBlinking) {
+        // Dark eyelid covering the eye slit during blink
+        this.eyeGraphics.fillStyle(0x060f0a, 0.95);
+        this.eyeGraphics.fillRect(eyeX - 2.5, eyeTopY - 1, 4, 2);
+        this.eyeGraphics.fillRect(eyeX - 2.5, eyeBottomY - 1, 4, 2);
+      } else {
+        // Subtle additive amber micro-glow
+        const pulse = 0.25 + Math.sin(time * 0.006) * 0.12;
+        this.eyeGraphics.fillStyle(0xf59e0b, pulse);
+        this.eyeGraphics.fillCircle(eyeX, eyeTopY, 2.0);
+        this.eyeGraphics.fillCircle(eyeX, eyeBottomY, 2.0);
+      }
+    }
+
     // 2. Micro attack recoil recovery
     if (this.attackLunge > 0) {
       this.attackLunge = Math.max(0, this.attackLunge - dt * 14);
@@ -603,32 +718,74 @@ export class Kaiju {
       this.shadow.setScale(this.currentScale);
     }
 
-    // 4. Turret Aiming for 'back_slot' (Tracks nearest enemy within clamp angle)
+    // 4. Turret Aiming, Recoil and Muzzle Flash for 'back_slot'
+    if (this.turretRecoil > 0) {
+      this.turretRecoil = Math.max(0, this.turretRecoil - dt * 25);
+    }
+    if (this.muzzleFlashTimer > 0) {
+      this.muzzleFlashTimer = Math.max(0, this.muzzleFlashTimer - dt);
+      if (this.muzzleFlashTimer <= 0 && this.muzzleFlashSprite) {
+        this.muzzleFlashSprite.setVisible(false);
+      }
+    }
+
     const backEntry = this.layers.get('back_slot');
-    if (backEntry && backEntry.sprite && backEntry.slotConfig && backEntry.slotConfig.canAim) {
-      let targetAimDiff = 0;
-      if (this.scene && this.scene.enemyManager && this.scene.enemyManager.enemies) {
-        let nearestEnemy = null;
-        let minDist = 220; // 220 px detection arc
-        for (const e of this.scene.enemyManager.enemies) {
-          if (e.active && e.isAlive) {
-            const dist = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y);
-            if (dist < minDist) {
-              minDist = dist;
-              nearestEnemy = e;
+    if (backEntry && backEntry.sprite && backEntry.slotConfig) {
+      if (backEntry.slotConfig.canAim) {
+        let targetAimDiff = 0;
+        if (this.scene && this.scene.enemyManager && this.scene.enemyManager.enemies) {
+          let nearestEnemy = null;
+          let minDist = 240; // 240 px detection arc
+          for (const e of this.scene.enemyManager.enemies) {
+            if (e.active && e.isAlive) {
+              const dist = Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y);
+              if (dist < minDist) {
+                minDist = dist;
+                nearestEnemy = e;
+              }
             }
           }
+          if (nearestEnemy) {
+            const worldAngleToEnemy = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
+            const diff = Phaser.Math.Angle.Wrap(worldAngleToEnemy - this.rotation);
+            const maxAim = backEntry.slotConfig.maxAimAngle || 0.65;
+            targetAimDiff = Phaser.Math.Clamp(diff, -maxAim, maxAim);
+          }
         }
-        if (nearestEnemy) {
-          const worldAngleToEnemy = Math.atan2(nearestEnemy.y - this.y, nearestEnemy.x - this.x);
-          const diff = Phaser.Math.Angle.Wrap(worldAngleToEnemy - this.rotation);
-          const maxAim = backEntry.slotConfig.maxAimAngle || 0.65;
-          targetAimDiff = Phaser.Math.Clamp(diff, -maxAim, maxAim);
-        }
+        const speed = backEntry.slotConfig.aimTurnSpeed || 6.0;
+        backEntry.currentAimOffset += (targetAimDiff - backEntry.currentAimOffset) * Math.min(1, speed * dt);
       }
-      const speed = backEntry.slotConfig.aimTurnSpeed || 6.0;
-      backEntry.currentAimOffset += (targetAimDiff - backEntry.currentAimOffset) * Math.min(1, speed * dt);
-      backEntry.sprite.setRotation((backEntry.slotConfig.rotation || 0) + backEntry.currentAimOffset);
+
+      const anchorX = (backEntry.slotConfig.anchor ? backEntry.slotConfig.anchor.x : 0) * this.displayScale;
+      const anchorY = (backEntry.slotConfig.anchor ? backEntry.slotConfig.anchor.y : 0) * this.displayScale;
+      const aimAngle = (backEntry.slotConfig.rotation || 0) + (backEntry.currentAimOffset || 0);
+
+      // Recoil kickback along aim axis
+      const recoilX = -Math.cos(aimAngle) * this.turretRecoil;
+      const recoilY = -Math.sin(aimAngle) * this.turretRecoil;
+      // Subtle stride bobbing while moving
+      const bobY = this.isMoving ? Math.sin(time * 0.012) * 1.0 : 0;
+
+      backEntry.sprite.setPosition(anchorX + recoilX, anchorY + recoilY + bobY);
+      backEntry.sprite.setRotation(aimAngle);
+
+      if (this.muzzleFlashSprite && this.muzzleFlashSprite.visible) {
+        const tipDist = 20 * this.displayScale;
+        this.muzzleFlashSprite.setPosition(
+          anchorX + Math.cos(aimAngle) * tipDist,
+          anchorY + Math.sin(aimAngle) * tipDist + bobY
+        );
+        this.muzzleFlashSprite.setRotation(aimAngle);
+      }
+    }
+
+    // Subtle stride bobbing for head slot while moving
+    const headEntry = this.layers.get('head_slot');
+    if (headEntry && headEntry.sprite && headEntry.slotConfig) {
+      const hAnchorX = (headEntry.slotConfig.anchor ? headEntry.slotConfig.anchor.x : 0) * this.displayScale;
+      const hAnchorY = (headEntry.slotConfig.anchor ? headEntry.slotConfig.anchor.y : 0) * this.displayScale;
+      const headBobX = this.isMoving ? Math.cos(time * 0.012) * 0.8 : 0;
+      headEntry.sprite.setPosition(hAnchorX + headBobX, hAnchorY);
     }
 
     // 5. Energy Shield rotation & recharge timer
@@ -664,7 +821,44 @@ export class Kaiju {
       this.reactorCoreGraphics.fillCircle(0, 0, 3.5);
     }
 
-    // 7. Sync container position (including micro attack lunge)
+    // 7. Visual damage when HP < 30% (Glowing magma cracks & smoke puffs)
+    const hpRatio = this.hp / (this.maxHp || 100);
+    if (hpRatio < 0.30 && !this.isDead) {
+      if (this.lowHpGraphics) {
+        this.lowHpGraphics.clear();
+        const crackPulse = 0.5 + Math.sin(time * 0.008) * 0.5;
+        this.lowHpGraphics.lineStyle(2, 0xef4444, crackPulse * 0.85);
+        this.lowHpGraphics.beginPath();
+        this.lowHpGraphics.moveTo(-10, -6);
+        this.lowHpGraphics.lineTo(-3, 2);
+        this.lowHpGraphics.lineTo(6, -2);
+        this.lowHpGraphics.lineTo(12, 8);
+        this.lowHpGraphics.strokePath();
+
+        this.lowHpGraphics.lineStyle(1.5, 0xf97316, crackPulse * 0.7);
+        this.lowHpGraphics.beginPath();
+        this.lowHpGraphics.moveTo(-5, 8);
+        this.lowHpGraphics.lineTo(2, 14);
+        this.lowHpGraphics.lineTo(8, 16);
+        this.lowHpGraphics.strokePath();
+
+        this.lowHpGraphics.fillStyle(0xfef08a, crackPulse * 0.6);
+        this.lowHpGraphics.fillCircle(1, 4, 2.5);
+      }
+
+      this.lowHpSmokeTimer = (this.lowHpSmokeTimer || 0) + dt;
+      if (this.lowHpSmokeTimer >= 0.24) {
+        this.lowHpSmokeTimer = 0;
+        if (this.scene && this.scene.particleManager) {
+          const smokeOffset = (Math.random() - 0.5) * 16 * this.currentScale;
+          this.scene.particleManager.emitSmokeTrail(this.x + smokeOffset, this.y + smokeOffset);
+        }
+      }
+    } else if (this.lowHpGraphics) {
+      this.lowHpGraphics.clear();
+    }
+
+    // 8. Sync container position (including micro attack lunge)
     const lungeDist = this.attackLunge * this.currentScale;
     const drawX = this.x + Math.cos(this.rotation) * lungeDist;
     const drawY = this.y + Math.sin(this.rotation) * lungeDist;
@@ -719,13 +913,14 @@ export class Kaiju {
   }
 
   /**
-   * Applies a brief white hit flash across Kaiju layers and segments
+   * Applies a brief red hit flash across Kaiju layers and segments
    * @param {boolean} enable 
    */
   applyHitFlash(enable) {
+    const flashColor = 0xff3333;
     this.layers.forEach(layer => {
       if (layer.sprite) {
-        if (enable) layer.sprite.setTintFill(0xffffff);
+        if (enable) layer.sprite.setTintFill(flashColor);
         else layer.sprite.clearTint();
       }
     });
@@ -733,23 +928,23 @@ export class Kaiju {
     if (this.mutationSprites) {
       this.mutationSprites.forEach(sprite => {
         if (sprite) {
-          if (enable) sprite.setTintFill(0xffffff);
+          if (enable) sprite.setTintFill(flashColor);
           else sprite.clearTint();
         }
       });
     }
 
     if (this.leftFoot) {
-      if (enable) this.leftFoot.setTintFill(0xffffff);
+      if (enable) this.leftFoot.setTintFill(flashColor);
       else this.leftFoot.clearTint();
     }
     if (this.rightFoot) {
-      if (enable) this.rightFoot.setTintFill(0xffffff);
+      if (enable) this.rightFoot.setTintFill(flashColor);
       else this.rightFoot.clearTint();
     }
     if (this.tailSegments) {
       this.tailSegments.forEach(seg => {
-        if (enable) seg.sprite.setTintFill(0xffffff);
+        if (enable) seg.sprite.setTintFill(flashColor);
         else seg.sprite.clearTint();
       });
     }
@@ -1042,6 +1237,10 @@ export class Kaiju {
     this.isDead = false;
     this.invincibleTimer = 0;
     this.flashTimer = 0;
+    this.turretRecoil = 0;
+    this.muzzleFlashTimer = 0;
+    if (this.muzzleFlashSprite) this.muzzleFlashSprite.setVisible(false);
+    if (this.lowHpGraphics) this.lowHpGraphics.clear();
     this.applyHitFlash(false);
     this.clearAllMutations();
     this.container.setVisible(true);

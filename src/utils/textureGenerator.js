@@ -12,6 +12,7 @@ export class TextureGenerator {
    * @param {Phaser.Scene} scene 
    */
   static generateAll(scene) {
+    this.createAdditiveGlowTextures(scene);
     this.createKaijuTextures(scene);
     this.createElectricSkinTextures(scene);
     this.createPedestrianTextures(scene);
@@ -20,6 +21,99 @@ export class TextureGenerator {
     this.createParticleTextures(scene);
     this.createCardAndWeaponTextures(scene);
     this.createMutationTextures(scene);
+  }
+
+  /**
+   * Additive Glow & Special FX Textures - Tahap 6B
+   * Pre-generates soft radial glow sprites, muzzle flashes, and shockwave rings.
+   * Rendered with BlendModes.ADD without expensive fullscreen shaders.
+   */
+  static createAdditiveGlowTextures(scene) {
+    // 1. Soft Radial Glow Light (64x64 px)
+    if (!scene.textures.exists('fx_glow_light_64')) {
+      const canvas = scene.textures.createCanvas('fx_glow_light_64', 64, 64);
+      const ctx = canvas.getContext('2d');
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+      grad.addColorStop(0.25, 'rgba(255, 255, 255, 0.7)');
+      grad.addColorStop(0.65, 'rgba(255, 255, 255, 0.25)');
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+      canvas.refresh();
+    }
+
+    // 2. Compact Glow Light (32x32 px)
+    if (!scene.textures.exists('fx_glow_light_32')) {
+      const canvas = scene.textures.createCanvas('fx_glow_light_32', 32, 32);
+      const ctx = canvas.getContext('2d');
+      const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+      grad.addColorStop(0.3, 'rgba(255, 255, 255, 0.65)');
+      grad.addColorStop(0.7, 'rgba(255, 255, 255, 0.2)');
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 32, 32);
+      canvas.refresh();
+    }
+
+    // 3. Muzzle Flash Star (24x24 px)
+    if (!scene.textures.exists('fx_muzzle_flash')) {
+      const canvas = scene.textures.createCanvas('fx_muzzle_flash', 24, 24);
+      const ctx = canvas.getContext('2d');
+      const h = 12;
+      ctx.imageSmoothingEnabled = false;
+
+      // Outer golden flash spikes
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.moveTo(h, 0); ctx.lineTo(h + 2, h - 2); ctx.lineTo(24, h); ctx.lineTo(h + 2, h + 2);
+      ctx.lineTo(h, 24); ctx.lineTo(h - 2, h + 2); ctx.lineTo(0, h); ctx.lineTo(h - 2, h - 2);
+      ctx.closePath();
+      ctx.fill();
+
+      // Diagonal mini spikes
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.moveTo(3, 3); ctx.lineTo(h, h - 2); ctx.lineTo(21, 3); ctx.lineTo(h + 2, h);
+      ctx.lineTo(21, 21); ctx.lineTo(h, h + 2); ctx.lineTo(3, 21); ctx.lineTo(h - 2, h);
+      ctx.closePath();
+      ctx.fill();
+
+      // White-hot core
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(h, h, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      canvas.refresh();
+    }
+
+    // 4. Shockwave Ring (48x48 px)
+    if (!scene.textures.exists('fx_shockwave_ring')) {
+      const canvas = scene.textures.createCanvas('fx_shockwave_ring', 48, 48);
+      const ctx = canvas.getContext('2d');
+      const h = 24;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(h, h, 21, 0, Math.PI * 2);
+      ctx.stroke();
+      canvas.refresh();
+    }
+
+    // 5. Smoke Puff (16x16 px)
+    if (!scene.textures.exists('fx_smoke_puff')) {
+      const canvas = scene.textures.createCanvas('fx_smoke_puff', 16, 16);
+      const ctx = canvas.getContext('2d');
+      const grad = ctx.createRadialGradient(8, 8, 1, 8, 8, 8);
+      grad.addColorStop(0, 'rgba(148, 163, 184, 0.7)');
+      grad.addColorStop(0.6, 'rgba(100, 116, 139, 0.4)');
+      grad.addColorStop(1, 'rgba(71, 85, 105, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 16, 16);
+      canvas.refresh();
+    }
   }
 
   /**
@@ -273,34 +367,51 @@ export class TextureGenerator {
         ctx.fillRect(fx - 1, yBottom - Math.floor(fh * 0.7), 2, Math.floor(fh * 1.4));
       });
 
-      // 7. GLOWING PREDATOR EYES (Menacing glowing neon amber)
-      const eyeTopY = half - 9;
-      const eyeBottomY = half + 9;
-      const eyeX = half + 26;
+      // 7. GLOWING PREDATOR EYES (Menacing, inward-angled slit eyes with dark brow ridge)
+      const eyeX = half + 25.5;
+      const eyeTopY = half - 5.2;
+      const eyeBottomY = half + 5.2;
 
-      // Soft eye glow aura
-      ctx.fillStyle = C.eyeHalo;
+      // Dark Supraorbital Brow Ridge (Tulang alis gelap tipis bersudut tajam)
+      ctx.fillStyle = '#060f0a';
+      // Top brow bone (angled inward towards snout midline)
       ctx.beginPath();
-      ctx.ellipse(eyeX, eyeTopY, 6, 4, -0.2, 0, Math.PI * 2);
-      ctx.ellipse(eyeX, eyeBottomY, 6, 4, 0.2, 0, Math.PI * 2);
+      ctx.moveTo(eyeX - 2.5, eyeTopY - 1.8);
+      ctx.lineTo(eyeX + 2.5, eyeTopY - 1.0);
+      ctx.lineTo(eyeX + 2.5, eyeTopY - 0.4);
+      ctx.lineTo(eyeX - 2.5, eyeTopY - 1.2);
+      ctx.closePath();
       ctx.fill();
 
-      // Glowing Amber Sclera
-      ctx.fillStyle = C.eyeSclera;
+      // Bottom brow bone
       ctx.beginPath();
-      ctx.ellipse(eyeX, eyeTopY, 4, 2.5, -0.3, 0, Math.PI * 2);
-      ctx.ellipse(eyeX, eyeBottomY, 4, 2.5, 0.3, 0, Math.PI * 2);
+      ctx.moveTo(eyeX - 2.5, eyeBottomY + 1.8);
+      ctx.lineTo(eyeX + 2.5, eyeBottomY + 1.0);
+      ctx.lineTo(eyeX + 2.5, eyeBottomY + 0.4);
+      ctx.lineTo(eyeX - 2.5, eyeBottomY + 1.2);
+      ctx.closePath();
       ctx.fill();
 
-      // Slit Pupils
-      ctx.fillStyle = C.eyePupil;
-      ctx.fillRect(eyeX, eyeTopY - 2, 1, 4);
-      ctx.fillRect(eyeX, eyeBottomY - 2, 1, 4);
+      // Soft eye glow aura (Radius kecil, tidak menyilaukan)
+      ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
+      ctx.beginPath();
+      ctx.ellipse(eyeX, eyeTopY, 2.5, 1.8, -0.35, 0, Math.PI * 2);
+      ctx.ellipse(eyeX, eyeBottomY, 2.5, 1.8, 0.35, 0, Math.PI * 2);
+      ctx.fill();
 
-      // Bright white eye spark
-      ctx.fillStyle = C.eyeCore;
-      ctx.fillRect(eyeX + 1, eyeTopY - 1, 1, 1);
-      ctx.fillRect(eyeX + 1, eyeBottomY - 1, 1, 1);
+      // Slit Amber Iris/Sclera (Lebar 2.5px, tampak marah miring ke dalam)
+      ctx.fillStyle = '#eab308';
+      ctx.beginPath();
+      ctx.ellipse(eyeX, eyeTopY, 1.5, 0.75, -0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(eyeX, eyeBottomY, 1.5, 0.75, 0.35, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Sharp pupil spark (1px apex highlight)
+      ctx.fillStyle = '#fef08a';
+      ctx.fillRect(eyeX, eyeTopY - 0.5, 1, 1);
+      ctx.fillRect(eyeX, eyeBottomY - 0.5, 1, 1);
     };
 
     // 1. Generate base static 'kaiju_body' (Frame 0: Neutral)
@@ -1618,47 +1729,56 @@ export class TextureGenerator {
       ctx.fillRect(h + 22, h - 1, 3, 2);
     });
 
-    // 6. LASER EYES (Mata Laser) - Crimson ocular implants
+    // 6. LASER EYES (Mata Laser) - Crimson ocular implants (tetap kecil bersudut miring)
     createLayer('mutation_laser_eyes_1', (ctx, h) => {
+      // Sleek crimson slit matching Kaiju eye position (h + 25)
+      ctx.fillStyle = '#7f1d1d';
+      ctx.fillRect(h + 24, h - 6, 3, 2);
+      ctx.fillRect(h + 24, h + 4, 3, 2);
+      // Bright ruby optic core
       ctx.fillStyle = '#ff1e42';
-      ctx.fillRect(h + 15, h - 6, 4, 3);
-      ctx.fillRect(h + 15, h + 3, 4, 3);
+      ctx.fillRect(h + 24.5, h - 5.5, 2, 1);
+      ctx.fillRect(h + 24.5, h + 4.5, 2, 1);
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(h + 17, h - 5, 1, 1);
-      ctx.fillRect(h + 17, h + 4, 1, 1);
+      ctx.fillRect(h + 25.5, h - 5, 1, 0.8);
+      ctx.fillRect(h + 25.5, h + 5, 1, 0.8);
     });
 
     createLayer('mutation_laser_eyes_3', (ctx, h) => {
+      // Thin red energy conduits along temple to ocular socket
+      ctx.fillStyle = '#b91c1c';
+      ctx.fillRect(h + 16, h - 5.5, 8, 1);
+      ctx.fillRect(h + 16, h + 4.5, 8, 1);
+      // Sleek ruby optic slit
       ctx.fillStyle = '#450a0a';
-      ctx.fillRect(h + 14, h - 8, 6, 5);
-      ctx.fillRect(h + 14, h + 3, 6, 5);
-      // Bright ruby ocular laser core
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(h + 15, h - 7, 5, 3);
-      ctx.fillRect(h + 15, h + 4, 5, 3);
-      // Focused optic dot
-      ctx.fillStyle = '#fecaca';
-      ctx.fillRect(h + 18, h - 6, 2, 2);
-      ctx.fillRect(h + 18, h + 5, 2, 2);
+      ctx.fillRect(h + 24, h - 6.2, 3.5, 2.2);
+      ctx.fillRect(h + 24, h + 4, 3.5, 2.2);
+      ctx.fillStyle = '#ff1e42';
+      ctx.fillRect(h + 24.5, h - 5.7, 2.5, 1.2);
+      ctx.fillRect(h + 24.5, h + 4.5, 2.5, 1.2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(h + 25.5, h - 5.2, 1, 0.8);
+      ctx.fillRect(h + 25.5, h + 4.8, 1, 0.8);
     });
 
     createLayer('mutation_laser_eyes_5', (ctx, h) => {
-      // Overcharged Death-Ray ocular lenses with glowing energy conduits
+      // Overcharged Death-Ray: Dual energy conduit traces along brow and temple
+      ctx.fillStyle = '#7f1d1d';
+      ctx.fillRect(h + 12, h - 5.5, 12, 1);
+      ctx.fillRect(h + 12, h + 4.5, 12, 1);
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(h + 18, h - 5.5, 6, 1);
+      ctx.fillRect(h + 18, h + 4.5, 6, 1);
+      // Eye socket stays sharp 3.5px slit with hyper-bright white-hot core
       ctx.fillStyle = '#1c0303';
-      ctx.fillRect(h + 13, h - 9, 8, 7);
-      ctx.fillRect(h + 13, h + 2, 8, 7);
-      // Red energy conduit lines back to spine
-      ctx.fillStyle = '#b91c1c';
-      ctx.fillRect(h + 7, h - 6, 7, 1);
-      ctx.fillRect(h + 7, h + 5, 7, 1);
-      // Intense crimson laser corona
+      ctx.fillRect(h + 23.5, h - 6.2, 4, 2.2);
+      ctx.fillRect(h + 23.5, h + 4, 4, 2.2);
       ctx.fillStyle = '#ff1e42';
-      ctx.fillRect(h + 14, h - 8, 7, 5);
-      ctx.fillRect(h + 14, h + 3, 7, 5);
-      // Pure white hyper-concentrated core
+      ctx.fillRect(h + 24, h - 5.7, 3, 1.2);
+      ctx.fillRect(h + 24, h + 4.5, 3, 1.2);
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(h + 18, h - 7, 3, 3);
-      ctx.fillRect(h + 18, h + 4, 3, 3);
+      ctx.fillRect(h + 25, h - 5.3, 1.5, 0.8);
+      ctx.fillRect(h + 25, h + 4.7, 1.5, 0.8);
     });
 
     // 7. QUAKE STOMP (Injakan Getar) - Seismic tectonic chest & belly plates

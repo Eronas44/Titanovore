@@ -77,6 +77,36 @@ export class WeaponSystem {
     // 5. Lingering ground fire pools (from Lv 5 Fire Breath)
     this.firePools = [];
 
+    // 6. Dedicated Flame Particle Pool (Max 160, Zero GC - Napas Api & Badai Plasma)
+    this.maxFlames = 160;
+    this.flamePool = [];
+    this.freeFlameIndices = [];
+    for (let i = 0; i < this.maxFlames; i++) {
+      this.flamePool.push({
+        active: false,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        perpX: 0,
+        perpY: 0,
+        life: 0,
+        maxLife: 0.5,
+        startSize: 3,
+        peakSize: 18,
+        turbulenceSeed: 0,
+        flickerOffset: 0,
+        isPlasma: false
+      });
+      this.freeFlameIndices.push(i);
+    }
+
+    // Flame Graphics Layers:
+    // Core additive glow (incandescent white/yellow/orange/cyan/magenta)
+    this.flameCoreGraphics = this.scene.add.graphics().setDepth(20.3).setBlendMode(Phaser.BlendModes.ADD);
+    // Tip smoke puffs (normal blend for dark billowy dissipation)
+    this.flameSmokeGraphics = this.scene.add.graphics().setDepth(20.1).setBlendMode(Phaser.BlendModes.NORMAL);
+
     // Equip default starting weapon: Claw Level 1
     this.equipWeapon('claw', 1);
   }
@@ -259,6 +289,7 @@ export class WeaponSystem {
    */
   update(dt) {
     this.attackGraphics.clear();
+    this.updateFlameParticles(dt);
 
     // 1. Update active weapons safely per-weapon
     for (const [id, entry] of this.equippedWeapons.entries()) {
@@ -425,6 +456,14 @@ export class WeaponSystem {
     const damage = lvlData.damage;
     const count = lvlData.projectileCount || 1;
 
+    // Trigger visual muzzle flash & recoil on Kaiju
+    if (this.kaiju && typeof this.kaiju.triggerMuzzleFlash === 'function') {
+      this.kaiju.triggerMuzzleFlash(0x38bdf8);
+    }
+    if (this.particleManager && typeof this.particleManager.spawnLightPool === 'function') {
+      this.particleManager.spawnLightPool(kx, ky, 36, 0x38bdf8, 0.45, 0.12);
+    }
+
     let targetX = 0;
     let targetY = 0;
     let hasTarget = false;
@@ -486,10 +525,13 @@ export class WeaponSystem {
     });
 
     if (hitEnemies.length > 0) {
+      if (this.particleManager && typeof this.particleManager.spawnLightPool === 'function') {
+        this.particleManager.spawnLightPool(kx, ky, range * 0.75, 0x38bdf8, 0.45, 0.2);
+      }
       const sample = hitEnemies.slice(0, 5);
       for (const target of sample) {
         this.visualEffects.push({
-          type: 'lightning',
+          type: 'plasma_lightning',
           startX: kx,
           startY: ky,
           endX: target.x,
@@ -685,8 +727,8 @@ export class WeaponSystem {
     // Ignite building cells in cone
     this.igniteBuildingCellsInCone(kx, ky, angle, reach, halfArc);
 
-    // Render continuous fire cone
-    this.renderFireCone(kx, ky, angle, reach, halfArc, lvlData.lingeringFire);
+    // Emit dynamic turbulent flame particle stream (No solid polygon or straight lines)
+    this.emitFlameStream(kx, ky, angle, reach, halfArc, false);
 
     // Lv 5: leave lingering fire pool
     if (lvlData.lingeringFire && Math.random() < 0.25) {
@@ -761,6 +803,13 @@ export class WeaponSystem {
       b.burnTimer -= dt;
       b.tickTimer -= dt;
 
+      // Jilatan api kecil dinamis pada sel gedung yang terbakar (Additive Core)
+      const flicker = 0.8 + Math.sin(this.scene.time.now * 0.025 + b.idx) * 0.25;
+      this.flameCoreGraphics.fillStyle(0xf97316, 0.65 * flicker);
+      this.flameCoreGraphics.fillCircle(b.worldX, b.worldY, 3.5 * flicker);
+      this.flameCoreGraphics.fillStyle(0xfef08a, 0.85 * flicker);
+      this.flameCoreGraphics.fillCircle(b.worldX, b.worldY - 2, 1.8 * flicker);
+
       if (b.tickTimer <= 0) {
         b.tickTimer = 0.25;
         const res = cg.damageCell(b.col, b.row, 1.2 * this.buildingDmgMultiplier);
@@ -803,24 +852,170 @@ export class WeaponSystem {
     }
   }
 
-  renderFireCone(kx, ky, angle, reach, halfArc, isLingering) {
-    const startAngle = angle - halfArc;
-    const endAngle = angle + halfArc;
+  // =========================================================================
+  // TURBULENT PARTICLE FLAME SYSTEM (Tahap 6B-fix)
+  // Zero-GC particle flame stream replacing solid cone polygon & straight lines
+  // =========================================================================
+  spawnFlameParticle(x, y, vx, vy, perpX, perpY, maxLife, startSize, peakSize, isPlasma = false) {
+    if (this.freeFlameIndices.length === 0) return -1;
+    const idx = this.freeFlameIndices.pop();
+    const p = this.flamePool[idx];
+    p.active = true;
+    p.x = x;
+    p.y = y;
+    p.vx = vx;
+    p.vy = vy;
+    p.perpX = perpX;
+    p.perpY = perpY;
+    p.life = maxLife;
+    p.maxLife = maxLife;
+    p.startSize = startSize;
+    p.peakSize = peakSize;
+    p.turbulenceSeed = Math.random() * 20;
+    p.flickerOffset = Math.random() * 10;
+    p.isPlasma = isPlasma;
+    return idx;
+  }
 
-    this.attackGraphics.fillStyle(isLingering ? 0xea580c : 0xf97316, 0.35);
-    this.attackGraphics.beginPath();
-    this.attackGraphics.moveTo(kx, ky);
-    this.attackGraphics.arc(kx, ky, reach, startAngle, endAngle);
-    this.attackGraphics.closePath();
-    this.attackGraphics.fill();
+  emitFlameStream(kx, ky, angle, reach, halfArc, isPlasma = false) {
+    // Moncong mulut di depan kepala Kaiju
+    const snoutDist = 32 * this.kaiju.currentScale;
+    const mx = kx + Math.cos(angle) * snoutDist;
+    const my = ky + Math.sin(angle) * snoutDist;
 
-    // Hot inner core
-    this.attackGraphics.fillStyle(0xfde047, 0.65);
-    this.attackGraphics.beginPath();
-    this.attackGraphics.moveTo(kx, ky);
-    this.attackGraphics.arc(kx, ky, reach * 0.6, angle - halfArc * 0.6, angle + halfArc * 0.6);
-    this.attackGraphics.closePath();
-    this.attackGraphics.fill();
+    // Emisi partikel dinamis: 3-5 partikel per frame di dalam kerucut serangan
+    const emitCount = 4;
+    for (let i = 0; i < emitCount; i++) {
+      if (this.freeFlameIndices.length === 0) break;
+
+      const pSpread = (Math.random() - 0.5) * halfArc * 1.8;
+      const pAngle = angle + pSpread;
+      const maxLife = 0.38 + Math.random() * 0.16;
+      const speed = reach / (maxLife * 0.95);
+      const vx = Math.cos(pAngle) * speed;
+      const vy = Math.sin(pAngle) * speed;
+
+      // Vektor tegak lurus untuk turbulensi bergelombang (lidah api yang meliuk)
+      const perpX = -Math.sin(pAngle);
+      const perpY = Math.cos(pAngle);
+
+      const startSize = 3.5 + Math.random() * 2.0;
+      const peakSize = (14 + Math.random() * 8.0) * this.kaiju.currentScale;
+
+      this.spawnFlameParticle(mx, my, vx, vy, perpX, perpY, maxLife, startSize, peakSize, isPlasma);
+    }
+
+    // Bara kecil melayang naik & cahaya hangat lembut di tanah
+    if (this.particleManager) {
+      if (Math.random() < 0.35 && typeof this.particleManager.emitEmbers === 'function') {
+        const tipDist = reach * (0.35 + Math.random() * 0.5);
+        const ex = mx + Math.cos(angle + (Math.random() - 0.5) * halfArc) * tipDist;
+        const ey = my + Math.sin(angle + (Math.random() - 0.5) * halfArc) * tipDist;
+        this.particleManager.emitEmbers(ex, ey, isPlasma ? 0x67e8f9 : 0xfef08a, 2, 45);
+      }
+      if (Math.random() < 0.24 && typeof this.particleManager.spawnLightPool === 'function') {
+        const tipDist = reach * 0.5;
+        const lx = mx + Math.cos(angle) * tipDist;
+        const ly = my + Math.sin(angle) * tipDist;
+        this.particleManager.spawnLightPool(lx, ly, reach * 0.45, isPlasma ? 0x06b6d4 : 0xf97316, 0.12, 0.35);
+      }
+    }
+  }
+
+  updateFlameParticles(dt) {
+    this.flameCoreGraphics.clear();
+    this.flameSmokeGraphics.clear();
+
+    for (let i = 0; i < this.maxFlames; i++) {
+      const p = this.flamePool[i];
+      if (!p.active) continue;
+
+      p.life -= dt;
+      if (p.life <= 0) {
+        p.active = false;
+        this.freeFlameIndices.push(i);
+        continue;
+      }
+
+      const prog = 1.0 - (p.life / p.maxLife); // 0.0 di mulut -> 1.0 di ujung
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+
+      // Gerak bergelombang tegak lurus arah semburan (turbulensi meliuk dinamis)
+      const wave = Math.sin(prog * 22.0 + p.turbulenceSeed) * (14.0 * prog);
+      const drawX = p.x + p.perpX * wave;
+      const drawY = p.y + p.perpY * wave;
+
+      // Ukuran awal kecil lalu membesar dan mengecil dengan kelipan acak
+      const flicker = 0.84 + Math.sin(prog * 35.0 + p.flickerOffset) * 0.16;
+      let currentSize;
+      if (prog < 0.28) {
+        currentSize = p.startSize + (p.peakSize - p.startSize) * (prog / 0.28);
+      } else {
+        currentSize = p.peakSize * (1.0 - (prog - 0.28) * 0.42);
+      }
+      currentSize *= flicker;
+
+      if (!p.isPlasma) {
+        // --- NAPAS API (Fire Breath) ---
+        // Opasitas maksimum sekitar 0.8 agar medan di bawahnya tetap terbaca
+        if (prog < 0.18) {
+          // 1. Inti dekat mulut: putih - kuning terang (Additive Blend)
+          this.flameCoreGraphics.fillStyle(0xffffff, 0.78);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize * 0.55);
+          this.flameCoreGraphics.fillStyle(0xfef08a, 0.72);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize);
+        } else if (prog < 0.52) {
+          // 2. Lidah api tengah: kuning ke oranye menyala (Additive Blend)
+          const midAlpha = 0.75 * (1.0 - (prog - 0.18) * 0.4);
+          this.flameCoreGraphics.fillStyle(0xfacc15, midAlpha);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize * 0.6);
+          this.flameCoreGraphics.fillStyle(0xf97316, midAlpha * 0.9);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize);
+        } else if (prog < 0.80) {
+          // 3. Lidah api luar: oranye gelap ke merah tua membara (Additive Blend)
+          const outerAlpha = 0.65 * (1.0 - (prog - 0.52) / 0.28);
+          this.flameCoreGraphics.fillStyle(0xea580c, outerAlpha);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize * 0.7);
+          this.flameCoreGraphics.fillStyle(0x991b1b, outerAlpha * 0.85);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize);
+        } else {
+          // 4. Ujung semburan: asap gelap transparan (Normal Blend)
+          const smokeAlpha = 0.32 * (1.0 - (prog - 0.80) / 0.20);
+          this.flameSmokeGraphics.fillStyle(0x27272a, smokeAlpha);
+          this.flameSmokeGraphics.fillCircle(drawX, drawY, currentSize * 1.15);
+        }
+      } else {
+        // --- BADAI PLASMA (Evolusi Badai Plasma) ---
+        // Warna biru-ungu plasma dengan prinsip partikel turbulen yang sama
+        if (prog < 0.18) {
+          // 1. Inti putih-cyan terang (Additive Blend)
+          this.flameCoreGraphics.fillStyle(0xffffff, 0.80);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize * 0.55);
+          this.flameCoreGraphics.fillStyle(0x67e8f9, 0.75);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize);
+        } else if (prog < 0.52) {
+          // 2. Cyan ke biru elektrik (Additive Blend)
+          const midAlpha = 0.75 * (1.0 - (prog - 0.18) * 0.4);
+          this.flameCoreGraphics.fillStyle(0x06b6d4, midAlpha);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize * 0.6);
+          this.flameCoreGraphics.fillStyle(0x3b82f6, midAlpha * 0.9);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize);
+        } else if (prog < 0.80) {
+          // 3. Ungu - magenta plasma (Additive Blend)
+          const outerAlpha = 0.65 * (1.0 - (prog - 0.52) / 0.28);
+          this.flameCoreGraphics.fillStyle(0xa855f7, outerAlpha);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize * 0.7);
+          this.flameCoreGraphics.fillStyle(0xd946ef, outerAlpha * 0.85);
+          this.flameCoreGraphics.fillCircle(drawX, drawY, currentSize);
+        } else {
+          // 4. Asap indigo kosmik tipis (Normal Blend)
+          const smokeAlpha = 0.30 * (1.0 - (prog - 0.80) / 0.20);
+          this.flameSmokeGraphics.fillStyle(0x1e1b4b, smokeAlpha);
+          this.flameSmokeGraphics.fillCircle(drawX, drawY, currentSize * 1.15);
+        }
+      }
+    }
   }
 
   // =========================================================================
@@ -834,6 +1029,14 @@ export class WeaponSystem {
     const count = lvlData.rocketCount || 2;
     const damage = lvlData.damage || 45;
     const blast = lvlData.blastRadius || 30;
+
+    // Trigger visual launcher flash on Kaiju
+    if (this.kaiju && typeof this.kaiju.triggerMuzzleFlash === 'function') {
+      this.kaiju.triggerMuzzleFlash(0xf97316);
+    }
+    if (this.particleManager && typeof this.particleManager.spawnLightPool === 'function') {
+      this.particleManager.spawnLightPool(kx, ky, 40, 0xf97316, 0.5, 0.15);
+    }
 
     // Search nearest enemy target safely (ground or air)
     let targetIdx = -1;
@@ -945,8 +1148,16 @@ export class WeaponSystem {
       }
     }
 
-    // Camera shake & visual expanding seismic ring
+    // Camera shake, shockwave ring & glowing ground pool
     this.scene.cameras.main.shake(140, 0.005);
+    if (this.particleManager) {
+      if (typeof this.particleManager.spawnShockwave === 'function') {
+        this.particleManager.spawnShockwave(kx, ky, radius, isSecondQuake ? 0xf59e0b : 0xeab308, 0.3);
+      }
+      if (typeof this.particleManager.spawnLightPool === 'function') {
+        this.particleManager.spawnLightPool(kx, ky, radius * 0.85, 0xf59e0b, 0.5, 0.35);
+      }
+    }
     this.visualEffects.push({
       type: 'shockwave',
       x: kx,
@@ -962,11 +1173,40 @@ export class WeaponSystem {
   // 9. LASER EYES (Mata Laser)
   // =========================================================================
   updateLaserEyes(entry, lvlData, dt, effectiveCooldown) {
+    const kx = this.kaiju.x;
+    const ky = this.kaiju.y;
+
     if (!entry.isFiring) {
       entry.timer -= dt;
+      // Pre-fire eye charge flare: mata bersinar lebih terang saat mengisi tembakan
+      if (entry.timer <= 0.35 && entry.timer > 0) {
+        const prog = 1.0 - (entry.timer / 0.35);
+        const kAngle = this.kaiju.rotation;
+        const cos = Math.cos(kAngle);
+        const sin = Math.sin(kAngle);
+        const eyeOffsetDist = 25.5 * this.kaiju.currentScale;
+        const eyeTopLat = -5.2 * this.kaiju.currentScale;
+        const eyeBottomLat = 5.2 * this.kaiju.currentScale;
+
+        const topX = kx + cos * eyeOffsetDist - sin * eyeTopLat;
+        const topY = ky + sin * eyeOffsetDist + cos * eyeTopLat;
+        const botX = kx + cos * eyeOffsetDist - sin * eyeBottomLat;
+        const botY = ky + sin * eyeOffsetDist + cos * eyeBottomLat;
+
+        // Bright concentrated additive flare on ocular sockets (mata tetap kecil, hanya intensitas cahaya naik)
+        this.flameCoreGraphics.fillStyle(0xff1e42, 0.75 * prog);
+        this.flameCoreGraphics.fillCircle(topX, topY, 2.5);
+        this.flameCoreGraphics.fillCircle(botX, botY, 2.5);
+        this.flameCoreGraphics.fillStyle(0xffffff, 0.9 * prog);
+        this.flameCoreGraphics.fillCircle(topX, topY, 1.2);
+        this.flameCoreGraphics.fillCircle(botX, botY, 1.2);
+      }
       if (entry.timer <= 0) {
         entry.isFiring = true;
         entry.firingTimer = lvlData.beamDuration || 1.0;
+        if (this.particleManager && typeof this.particleManager.spawnLightPool === 'function') {
+          this.particleManager.spawnLightPool(kx, ky, 38, 0xef4444, 0.65, 0.2);
+        }
       }
       return;
     }
@@ -978,8 +1218,6 @@ export class WeaponSystem {
       return;
     }
 
-    const kx = this.kaiju.x;
-    const ky = this.kaiju.y;
     const reach = lvlData.range * this.rangeMultiplier;
     const damage = lvlData.damage * this.getEffectiveDamageMultiplier() * dt * 6.0; // 6 ticks/sec
     const isDual = !!lvlData.isDualBeam;
@@ -994,24 +1232,34 @@ export class WeaponSystem {
     if (!isDual) {
       this.firePiercingLaser(kx, ky, targetAngle, reach, damage, 0);
     } else {
-      // Twin parallel death beams
-      this.firePiercingLaser(kx, ky, targetAngle, reach, damage, -6);
-      this.firePiercingLaser(kx, ky, targetAngle, reach, damage, 6);
+      // Twin parallel death beams from both eye sockets
+      this.firePiercingLaser(kx, ky, targetAngle, reach, damage, -5.2);
+      this.firePiercingLaser(kx, ky, targetAngle, reach, damage, 5.2);
     }
   }
 
   firePiercingLaser(kx, ky, angle, reach, damage, lateralOffset) {
+    const snoutDist = 26 * this.kaiju.currentScale;
+    const forwardX = kx + Math.cos(angle) * snoutDist;
+    const forwardY = ky + Math.sin(angle) * snoutDist;
     const perpAngle = angle + Math.PI / 2;
-    const ox = kx + Math.cos(perpAngle) * lateralOffset;
-    const oy = ky + Math.sin(perpAngle) * lateralOffset;
+    const ox = forwardX + Math.cos(perpAngle) * lateralOffset;
+    const oy = forwardY + Math.sin(perpAngle) * lateralOffset;
     const ex = ox + Math.cos(angle) * reach;
     const ey = oy + Math.sin(angle) * reach;
 
-    // Render Laser Beam
-    this.attackGraphics.lineStyle(4, 0xff1e42, 0.85);
+    // Render Laser Beam: outer red glow, inner white core
+    this.attackGraphics.lineStyle(6.5, 0xef4444, 0.4);
     this.attackGraphics.lineBetween(ox, oy, ex, ey);
-    this.attackGraphics.lineStyle(1.5, 0xffffff, 1.0);
+    this.attackGraphics.lineStyle(3.0, 0xdc2626, 0.85);
     this.attackGraphics.lineBetween(ox, oy, ex, ey);
+    this.attackGraphics.lineStyle(1.2, 0xffffff, 1.0);
+    this.attackGraphics.lineBetween(ox, oy, ex, ey);
+
+    // Scorch ground light pool at laser tip / beam end
+    if (this.particleManager && Math.random() < 0.25 && typeof this.particleManager.spawnLightPool === 'function') {
+      this.particleManager.spawnLightPool(ex, ey, 32, 0xef4444, 0.45, 0.18);
+    }
 
     // Damage enemies intersecting beam
     this.enemyManager.queryEnemiesInRadius(kx, ky, reach + 20, (idx) => {
@@ -1028,8 +1276,8 @@ export class WeaponSystem {
 
       if (distToLine <= 14) {
         this.enemyManager.damageEnemy(idx, damage, true);
-        if (Math.random() < 0.2) {
-          this.particleManager.emitSparks(tx, ty, 0xff1e42, 2, 20);
+        if (this.particleManager && Math.random() < 0.35) {
+          this.particleManager.emitSparks(tx, ty, 0xffe4e6, 3, 35);
         }
       }
     });
@@ -1117,6 +1365,20 @@ export class WeaponSystem {
     this.attackGraphics.strokeCircle(kx, ky, radius);
     this.attackGraphics.lineStyle(1.5, 0xd946ef, 0.5);
     this.attackGraphics.strokeCircle(kx, ky, radius * 0.72);
+
+    // Emit swirling turbulent blue-purple plasma particles around the Kaiju
+    if (Math.random() < 0.45 && this.freeFlameIndices.length > 0) {
+      const pAng = Math.random() * Math.PI * 2;
+      const pDist = radius * (0.35 + Math.random() * 0.55);
+      const px = kx + Math.cos(pAng) * pDist;
+      const py = ky + Math.sin(pAng) * pDist;
+      const speed = 45 + Math.random() * 45;
+      const vx = Math.cos(pAng + Math.PI / 2) * speed;
+      const vy = Math.sin(pAng + Math.PI / 2) * speed;
+      const perpX = -Math.sin(pAng);
+      const perpY = Math.cos(pAng);
+      this.spawnFlameParticle(px, py, vx, vy, perpX, perpY, 0.36, 4, 15 * scale, true);
+    }
 
     // 2. Strongest bolt to furthest enemy in range
     entry.lightningTimer = (entry.lightningTimer || 0) - dt;
@@ -1765,9 +2027,11 @@ export class WeaponSystem {
           }
         }
 
-        // Rocket smoke puff
-        if (Math.random() < 0.35 && this.particleManager && typeof this.particleManager.emitDust === 'function') {
-          this.particleManager.emitDust(px, py, 1, 0.4);
+        // Rocket smoke puff trail
+        if (this.particleManager && typeof this.particleManager.emitSmokeTrail === 'function') {
+          if (Math.random() < 0.6) {
+            this.particleManager.emitSmokeTrail(px, py);
+          }
         }
       }
 
@@ -1888,8 +2152,14 @@ export class WeaponSystem {
       }
     }
 
-    // 3. Explosion visual & shockwave
+    // 3. Explosion visual, shockwave & additive light pool
     if (this.particleManager) {
+      if (typeof this.particleManager.spawnLightPool === 'function') {
+        this.particleManager.spawnLightPool(x, y, r * 1.5, 0xf97316, 0.65, 0.38);
+      }
+      if (typeof this.particleManager.spawnShockwave === 'function') {
+        this.particleManager.spawnShockwave(x, y, r * 1.3, 0xf97316, 0.22);
+      }
       if (typeof this.particleManager.emitCollapseFlash === 'function') {
         this.particleManager.emitCollapseFlash(x, y, Math.min(r * 0.8, 35));
       }
@@ -1924,6 +2194,18 @@ export class WeaponSystem {
     this.firePools = [];
     this.attackGraphics.clear();
     this.projGraphics.clear();
+    if (this.flameCoreGraphics) this.flameCoreGraphics.clear();
+    if (this.flameSmokeGraphics) this.flameSmokeGraphics.clear();
+
+    if (this.flamePool) {
+      for (let i = 0; i < this.maxFlames; i++) {
+        this.flamePool[i].active = false;
+      }
+      this.freeFlameIndices = [];
+      for (let i = this.maxFlames - 1; i >= 0; i--) {
+        this.freeFlameIndices.push(i);
+      }
+    }
 
     for (let i = 0; i < this.maxProjectiles; i++) {
       this.projActive[i] = 0;
@@ -1967,5 +2249,7 @@ export class WeaponSystem {
     this.reset();
     if (this.attackGraphics) this.attackGraphics.destroy();
     if (this.projGraphics) this.projGraphics.destroy();
+    if (this.flameCoreGraphics) this.flameCoreGraphics.destroy();
+    if (this.flameSmokeGraphics) this.flameSmokeGraphics.destroy();
   }
 }

@@ -16,23 +16,23 @@ export const ALERT_CONFIG = {
   ],
 
   // Decay Mechanics
-  decayDelaySeconds: 5.0, // Decay begins after 5s without destructive action
-  decayRatePerSecond: 1.6, // Rate of meter drop per second during inactivity
+  decayDelaySeconds: 4.0, // Decay begins after 4s without destructive action
+  decayRatePerSecond: 0.9, // Laju deselerasi Siaga stabil saat tidak ada aksi
   levelFloorProtectionDuration: 20.0, // Meter cannot drop below newly reached level for 20s
 
-  // Alert Gain Values
+  // Alert Gain Values - Dituned untuk Siaga 2 ~45-60s, Siaga 3 ~2-3 menit, Boss ~3-4 menit
   gains: {
-    cellDestroyed: 0.08, // Small gain per building cell crushed
-    buildingDestroyed: 4.0, // Large bonus gain when full building collapses
-    killCitizen: 0.20,
-    killPolice: 0.35,
-    killPoliceCar: 0.60,
-    killSoldier: 0.50,
-    killTank: 1.80,
-    killHelicopter: 2.20,
-    killDrone: 0.50,
-    killArtillery: 1.80,
-    killTruck: 0.80
+    cellDestroyed: 0.007, // Penurunan dari 0.08 untuk cegah lonjakan cepat dari sel gedung
+    buildingDestroyed: 0.50, // Penurunan dari 4.0 untuk bonus runtuh gedung proporsional
+    killCitizen: 0.04, // Penurunan dari 0.20
+    killPolice: 0.08, // Penurunan dari 0.35 agar Siaga 2 tercapai di 45-60s
+    killPoliceCar: 0.20, // Penurunan dari 0.60
+    killSoldier: 0.12, // Penurunan dari 0.50 agar Siaga 3 tercapai di 2-3 menit
+    killTank: 0.45, // Penurunan dari 1.80
+    killHelicopter: 0.60, // Penurunan dari 2.20
+    killDrone: 0.15, // Penurunan dari 0.50
+    killArtillery: 0.50, // Penurunan dari 1.80
+    killTruck: 0.25 // Penurunan dari 0.80
   },
 
   // Level-specific Spawn Tables and Limits
